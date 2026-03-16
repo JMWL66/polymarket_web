@@ -1,0 +1,8 @@
+node_modules/
+.env
+.DS_Store
+bot_status.json
+__pycache__/
+*.pyc
+bot.log
+.runtime/

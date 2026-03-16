@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polymarket BTC 交易控制台</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="status.css?v=20260316k">
+</head>
+<body>
+    <div class="app-bg">
+        <div class="bg-grid"></div>
+        <div class="bg-glow bg-glow-a"></div>
+        <div class="bg-glow bg-glow-b"></div>
+        <div class="bg-glow bg-glow-c"></div>
+    </div>
+
+    <!-- ========= 顶栏 ========= -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <div class="brand-lockup">
+                <span class="brand-kicker">Daily Candle Bias / Same-Day BTC 15M</span>
+                <div class="brand-line">
+                    <span class="status-dot" id="status-dot"></span>
+                    <span class="topbar-title">Polymarket BTC 交易控制台</span>
+                    <span class="status-label" id="status-label">连接中...</span>
+                </div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="topbar-controls">
+                <div class="account-switch topbar-switch">
+                    <button class="switch-btn active" id="switch-paper" onclick="setAccountMode('paper')">模拟账户</button>
+                    <button class="switch-btn" id="switch-real" onclick="setAccountMode('real')">真实账户</button>
+                </div>
+                <button class="trade-toggle-btn enabled compact-toggle" id="trade-toggle-btn" onclick="toggleTrading()">交易已开启</button>
+                <span class="status-label mini-view-badge" id="view-badge">模拟账户视图</span>
+            </div>
+            <div class="time-chip">
+                <span class="time-chip-label">Last Sync</span>
+                <span class="update-time" id="update-time">--:--:--</span>
+            </div>
+            <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()" title="刷新">⟳</button>
+        </div>
+    </header>
+
+    <!-- ========= 主体 ========= -->
+    <main class="main-grid">
+        <!-- ========= 左列 ========= -->
+        <div class="col-left">
+            <!-- 三个指标卡 -->
+            <div class="metrics-row" id="metrics-row">
+                <div class="metric-card balance-card" id="paper-balance-card">
+                    <div class="metric-label">模拟账户权益</div>
+                    <div class="metric-value mono" id="usdc-balance">--</div>
+                    <div class="metric-sub" id="balance-status">查询中</div>
+                </div>
+                <div class="metric-card wallet-card" id="real-balance-card">
+                    <div class="metric-label">真实钱包现金</div>
+                    <div class="metric-value mono" id="real-usdc-balance">--</div>
+                    <div class="metric-sub" id="real-balance-status">查询中</div>
+                </div>
+                <div class="metric-card price-card">
+                    <div class="metric-label">BTC 价格</div>
+                    <div class="metric-value mono" id="btc-price">--</div>
+                    <div class="metric-sub" id="btc-change">--</div>
+                </div>
+                <div class="metric-card signal-card">
+                    <div class="metric-label">AI预测</div>
+                    <div class="metric-value" id="ai-prediction">--</div>
+                    <div class="metric-sub" id="ai-label">等待信号</div>
+                </div>
+            </div>
+
+            <!-- 市场概率 -->
+            <div class="panel market-panel">
+                <div class="panel-header">
+                    <span class="panel-title">当前15分钟盘口</span>
+                    <span class="panel-badge" id="market-name">Loading...</span>
+                </div>
+                <div class="panel-caption">只在目标方向买一 ask 落在可交易区间、点差不过宽、顶档深度足够时，按 1U 开模拟仓。</div>
+                <div class="prob-bar-wrap">
+                    <div class="market-toolbar">
+                        <div class="market-tabs">
+                            <span class="market-tab active">目标方向</span>
+                            <span class="market-tab">反向方向</span>
+                        </div>
+                        <span class="market-mode">15M BTC <span class="market-caret">⌄</span></span>
+                    </div>
+                    <div class="market-choices">
+                        <div class="market-choice market-choice-up" id="prob-yes-card">
+                            <span class="market-choice-label" id="outcome-yes-label">UP</span>
+                            <strong class="market-choice-price mono" id="yes-price">--</strong>
+                            <span class="market-choice-prob mono" id="prob-yes">--</span>
+                        </div>
+                        <div class="market-choice market-choice-down" id="prob-no-card">
+                            <span class="market-choice-label" id="outcome-no-label">DOWN</span>
+                            <strong class="market-choice-price mono" id="no-price">--</strong>
+                            <span class="market-choice-prob mono" id="prob-no">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 最近交易 -->
+            <div class="panel flex-grow">
+                <div class="panel-header">
+                    <span class="panel-title" id="trade-panel-title">最近模拟交易</span>
+                    <span class="panel-badge" id="trade-count">0 笔</span>
+                </div>
+                <div class="panel-caption" id="trade-panel-caption">按你的脚本触发的模拟买卖记录，含开仓、提前止盈和到期离场。</div>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>方向</th>
+                                <th>金额</th>
+                                <th>价格</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trades-body">
+                            <tr><td colspan="5" class="empty-row">暂无交易记录</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ========= 右列 ========= -->
+        <div class="col-right">
+            <!-- 交易决策 -->
+            <div class="panel" id="decision-panel">
+                <div class="panel-header">
+                    <span class="panel-title">AI执行状态</span>
+                </div>
+                <div class="panel-caption">先给出 AI 方向判断，再结合 Order Book 的买一卖一、点差和深度筛选当天 BTC 15 分钟盘口。</div>
+                <div class="decision-tabs">
+                    <span class="dec-tab" id="tab-buy">买入</span>
+                    <span class="dec-tab" id="tab-sell">卖出</span>
+                    <span class="dec-tab" id="tab-hold">观望</span>
+                </div>
+                <div class="decision-main" id="decision-box">
+                    <div class="decision-action" id="decision-action">等待</div>
+                    <div class="decision-reason" id="decision-reason">系统初始化中，等待数据...</div>
+                </div>
+            </div>
+
+            <!-- Order Book -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">聚焦盘口深度</span>
+                </div>
+                <div class="panel-caption">当前聚焦盘口的真实买一卖一深度；中间价贴近 Polymarket 页面展示价，实际买入看 ask、卖出看 bid。</div>
+                <div class="orderbook-grid" id="orderbook-grid">
+                    <div class="empty-row">Loading order book...</div>
+                </div>
+            </div>
+
+            <!-- 挂单 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title" id="position-panel-title">当前模拟持仓</span>
+                    <span class="panel-badge" id="position-count">0 仓</span>
+                </div>
+                <div class="panel-caption" id="position-panel-caption">每个盘口 1U；开仓按 ask，止盈按 bid，浮盈超过 1U 提前卖出，否则等到盘口结束。</div>
+                <div class="order-list" id="order-list">
+                    <div class="empty-row">暂无模拟持仓</div>
+                </div>
+            </div>
+
+            <!-- Bot 配置 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">脚本参数</span>
+                </div>
+                <div class="panel-caption">页面显示的参数全部对应你这套脚本，不再使用旧的 5 分钟回放语义。</div>
+                <div class="config-grid" id="config-grid">
+                    <div class="cfg-row"><span>交易模式</span><span class="mono" id="cfg-mode">--</span></div>
+                    <div class="cfg-row"><span>日线开盘</span><span class="mono" id="cfg-daily-open">--</span></div>
+                    <div class="cfg-row"><span>当前现价</span><span class="mono" id="cfg-current">--</span></div>
+                    <div class="cfg-row"><span>下注金额</span><span class="mono" id="cfg-bet">--</span></div>
+                    <div class="cfg-row"><span>可用现金</span><span class="mono" id="cfg-max">--</span></div>
+                    <div class="cfg-row"><span>入场区间</span><span class="mono" id="cfg-diff">--</span></div>
+                    <div class="cfg-row"><span>最大点差</span><span class="mono" id="cfg-spread">--</span></div>
+                    <div class="cfg-row"><span>顶档卖盘</span><span class="mono" id="cfg-depth">--</span></div>
+                    <div class="cfg-row"><span>止盈条件</span><span class="mono" id="cfg-tp">--</span></div>
+                    <div class="cfg-row"><span>当前开仓</span><span class="mono" id="cfg-open-positions">--</span></div>
+                    <div class="cfg-row"><span>占用资金</span><span class="mono" id="cfg-reserved">--</span></div>
+                    <div class="cfg-row"><span>离场规则</span><span class="mono" id="cfg-sl">--</span></div>
+                    <div class="cfg-row"><span>模拟盈亏</span><span class="mono" id="cfg-paper-profit">--</span></div>
+                    <div class="cfg-row"><span>模拟账户</span><span class="mono" id="cfg-wallet">--</span></div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <script src="status.js?v=20260316k"></script>
+</body>
+</html>
