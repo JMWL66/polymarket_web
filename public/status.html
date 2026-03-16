@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="status.css?v=20260316k">
+    <link rel="stylesheet" href="status.css?v=20260316o">
 </head>
 <body>
     <div class="app-bg">
@@ -56,6 +56,11 @@
                     <div class="metric-label">模拟账户权益</div>
                     <div class="metric-value mono" id="usdc-balance">--</div>
                     <div class="metric-sub" id="balance-status">查询中</div>
+                </div>
+                <div class="metric-card asset-change-card" id="asset-change-card">
+                    <div class="metric-label">资产变化</div>
+                    <div class="metric-value mono" id="asset-change-value">--</div>
+                    <div class="metric-sub" id="asset-change-sub">等待模拟结果</div>
                 </div>
                 <div class="metric-card wallet-card" id="real-balance-card">
                     <div class="metric-label">真实钱包现金</div>
@@ -110,20 +115,22 @@
                     <span class="panel-title" id="trade-panel-title">最近模拟交易</span>
                     <span class="panel-badge" id="trade-count">0 笔</span>
                 </div>
-                <div class="panel-caption" id="trade-panel-caption">按你的脚本触发的模拟买卖记录，含开仓、提前止盈和到期离场。</div>
+                <div class="panel-caption" id="trade-panel-caption">完整展示这轮测试的全部交易记录，包含开仓、平仓、盈利/亏损和每一步的操作说明。</div>
                 <div class="table-wrap">
                     <table class="data-table">
                         <thead>
                             <tr>
                                 <th>时间</th>
+                                <th>操作</th>
                                 <th>方向</th>
                                 <th>金额</th>
                                 <th>价格</th>
-                                <th>状态</th>
+                                <th>结果</th>
+                                <th>说明</th>
                             </tr>
                         </thead>
                         <tbody id="trades-body">
-                            <tr><td colspan="5" class="empty-row">暂无交易记录</td></tr>
+                            <tr><td colspan="7" class="empty-row">暂无交易记录</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -150,6 +157,18 @@
                 </div>
             </div>
 
+            <!-- AI 思考记录 -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">AI 思考记录</span>
+                    <span class="panel-badge" id="ai-thought-meta">等待决策</span>
+                </div>
+                <div class="panel-caption">每次 AI 决策都会记录动作、置信度、关键依据和风险提示，方便你回看为什么买、卖或观望。</div>
+                <div class="thought-card" id="ai-thought-card">
+                    <div class="empty-row">等待 AI 输出...</div>
+                </div>
+            </div>
+
             <!-- Order Book -->
             <div class="panel">
                 <div class="panel-header">
@@ -167,7 +186,7 @@
                     <span class="panel-title" id="position-panel-title">当前模拟持仓</span>
                     <span class="panel-badge" id="position-count">0 仓</span>
                 </div>
-                <div class="panel-caption" id="position-panel-caption">每个盘口 1U；开仓按 ask，止盈按 bid，浮盈超过 1U 提前卖出，否则等到盘口结束。</div>
+                <div class="panel-caption" id="position-panel-caption">每个盘口 1U；默认只看摘要，点开后再看入场 ask、当前 bid、点差和到期时间。</div>
                 <div class="order-list" id="order-list">
                     <div class="empty-row">暂无模拟持仓</div>
                 </div>
@@ -200,6 +219,6 @@
         </div>
     </main>
 
-    <script src="status.js?v=20260316k"></script>
+    <script src="status.js?v=20260316o"></script>
 </body>
 </html>

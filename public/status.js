@@ -9,6 +9,7 @@ const dashboardState = {
     realBalance: null,
     config: null,
     positionCounts: { paper: 0, real: 0 },
+    expandedPositionId: null,
 };
 
 try {
@@ -46,6 +47,16 @@ function shortTime(iso) {
     }
 }
 
+function shortMinute(iso) {
+    if (!iso) return '--';
+    try {
+        const d = new Date(iso);
+        return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+        return iso;
+    }
+}
+
 function shortWallet(address) {
     if (!address || typeof address !== 'string') return '--';
     if (address.length < 12) return address;
@@ -73,6 +84,13 @@ function firstNumber(...values) {
     return null;
 }
 
+function extractPnlFromText(text) {
+    if (!text || typeof text !== 'string') return null;
+    const match = text.match(/实现盈亏\s*([+-]?\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    return toNumber(match[1]);
+}
+
 function getBalanceSourceLabel(source) {
     const sourceMap = {
         polygon_rpc: 'Polygon RPC',
@@ -92,6 +110,10 @@ function getEmptyTradeMessage() {
 
 function getEmptyPositionMessage() {
     return getActiveAccountMode() === 'real' ? '暂无真实持仓' : '暂无模拟持仓';
+}
+
+function getTradeColspan() {
+    return 7;
 }
 
 function setOutcomeLabels(left, right) {
@@ -117,6 +139,7 @@ function renderAccountMode() {
     const badge = document.getElementById('view-badge');
     const caption = document.getElementById('control-caption');
     const paperCard = document.getElementById('paper-balance-card');
+    const assetCard = document.getElementById('asset-change-card');
     const realCard = document.getElementById('real-balance-card');
 
     if (paperBtn) paperBtn.classList.toggle('active', !isReal);
@@ -125,12 +148,15 @@ function renderAccountMode() {
         paperCard.classList.toggle('is-selected', !isReal);
         paperCard.classList.toggle('is-hidden', isReal);
     }
+    if (assetCard) {
+        assetCard.classList.toggle('is-hidden', isReal);
+    }
     if (realCard) {
         realCard.classList.toggle('is-selected', isReal);
         realCard.classList.toggle('is-hidden', !isReal);
     }
     if (metricsRow) {
-        metricsRow.style.setProperty('--metric-columns', '3');
+        metricsRow.style.setProperty('--metric-columns', isReal ? '3' : '4');
     }
 
     if (badge) {
@@ -148,15 +174,58 @@ function renderAccountMode() {
         'trade-panel-caption',
         isReal
             ? '读取 Polymarket 公开成交记录；这里只读展示，不会发真实订单。'
-            : '按你的脚本触发的模拟买卖记录，含开仓、提前止盈和到期离场。'
+            : '完整展示这轮测试的全部交易记录，包含开仓、平仓、盈利/亏损和每一步的操作说明。'
     );
     setText('position-panel-title', isReal ? '当前真实持仓' : '当前模拟持仓');
     setText(
         'position-panel-caption',
         isReal
             ? '读取 Polymarket 公开持仓；如果为空，说明当前没有公开可见的持仓。'
-            : '每个盘口 1U；开仓按 ask，止盈按 bid，浮盈超过 1U 提前卖出，否则等到盘口结束。'
+            : '每个盘口 1U；默认只看摘要，点开后再看入场 ask、当前 bid、点差和到期时间。'
     );
+    renderPaperPerformance();
+}
+
+function renderPaperPerformance() {
+    const card = document.getElementById('asset-change-card');
+    const valueEl = document.getElementById('asset-change-value');
+    const subEl = document.getElementById('asset-change-sub');
+    if (!card || !valueEl || !subEl) return;
+
+    const cfg = dashboardState.config || {};
+    const paperSummary = dashboardState.paperBalance || {};
+    const startBalance = firstNumber(cfg.paper_start_balance, 100);
+    const endingBalance = firstNumber(cfg.paper_balance, paperSummary.balance);
+    let pnl = firstNumber(cfg.paper_profit);
+    if (pnl == null && startBalance != null && endingBalance != null) {
+        pnl = endingBalance - startBalance;
+    }
+    let roi = firstNumber(cfg.paper_roi_percent);
+    if (roi == null && startBalance != null && pnl != null && startBalance !== 0) {
+        roi = (pnl / startBalance) * 100;
+    }
+    const sessionStartedAt = firstValue(cfg.paper_session_started_at);
+
+    card.classList.remove('is-positive', 'is-negative', 'is-flat');
+    valueEl.className = 'metric-value mono';
+
+    if (pnl == null) {
+        valueEl.textContent = '--';
+        subEl.textContent = '等待模拟结果';
+        card.classList.add('is-flat');
+        return;
+    }
+
+    const pnlClass = pnl > 0 ? 'is-positive' : pnl < 0 ? 'is-negative' : 'is-flat';
+    card.classList.add(pnlClass);
+    valueEl.classList.add(pnl > 0 ? 'c-green' : pnl < 0 ? 'c-red' : 'c-amber');
+    valueEl.textContent = formatSignedUSD(pnl);
+
+    const roiText = roi == null ? '--' : `${roi >= 0 ? '+' : ''}${roi.toFixed(2)}%`;
+    const startText = startBalance == null ? '--' : formatUSD(startBalance);
+    const endText = endingBalance == null ? '--' : formatUSD(endingBalance);
+    const sessionText = sessionStartedAt ? `本轮 ${shortMinute(sessionStartedAt)} 起` : '本轮';
+    subEl.textContent = `${sessionText} · ${startText} -> ${endText} · ${roiText}`;
 }
 
 function renderTradingControl() {
@@ -395,6 +464,7 @@ async function fetchBotStatus() {
 
         if (data.market) setText('market-name', data.market);
         if (data.last_update) setText('update-time', shortTime(data.last_update));
+        renderAiThoughts(data);
         updateDecision(data.decision, data.error, data.decision_reason);
     } catch (e) {
         setOffline();
@@ -404,6 +474,44 @@ async function fetchBotStatus() {
 function setOffline() {
     document.getElementById('status-dot').className = 'status-dot offline';
     setText('status-label', '无数据');
+}
+
+function renderAiThoughts(data) {
+    const card = document.getElementById('ai-thought-card');
+    const meta = document.getElementById('ai-thought-meta');
+    if (!card || !meta) return;
+
+    const confidence = firstNumber(data.ai_confidence);
+    const model = firstValue(data.ai_model, dashboardState.config && dashboardState.config.ai_model, '--');
+    const action = firstValue(data.ai_action, data.decision, 'HOLD');
+    const factors = Array.isArray(data.ai_key_factors) ? data.ai_key_factors : [];
+    const risks = Array.isArray(data.ai_risk_flags) ? data.ai_risk_flags : [];
+    const reasoning = firstValue(data.ai_thought_markdown, data.signal_reason, data.decision_reason, '等待 AI 输出...');
+    const intervalSeconds = firstNumber(data.ai_decision_interval_seconds, dashboardState.config && dashboardState.config.ai_decision_interval_seconds);
+
+    meta.textContent = `${model} · ${action}${confidence != null ? ` · ${(confidence * 100).toFixed(0)}%` : ''}`;
+
+    const factorHtml = factors.length
+        ? factors.map((item) => `<li>${item}</li>`).join('')
+        : '<li>暂无关键依据</li>';
+    const riskHtml = risks.length
+        ? risks.map((item) => `<li>${item}</li>`).join('')
+        : '<li>暂无风险提示</li>';
+
+    card.innerHTML = `
+        <div class="thought-summary">${reasoning}</div>
+        <div class="thought-meta-line mono">决策频率：${intervalSeconds != null ? intervalSeconds + ' 秒 / 次' : '--'} · 最近同步：${shortTime(data.last_update)}</div>
+        <div class="thought-sections">
+            <div class="thought-section">
+                <div class="thought-section-title">关键依据</div>
+                <ul class="thought-list">${factorHtml}</ul>
+            </div>
+            <div class="thought-section">
+                <div class="thought-section-title">风险提示</div>
+                <ul class="thought-list">${riskHtml}</ul>
+            </div>
+        </div>
+    `;
 }
 
 function updateDecision(decision, error, reason) {
@@ -474,6 +582,7 @@ async function fetchBalance() {
                 } else {
                     setText('balance-status', '已连接 ' + wallet + ' · ' + source);
                 }
+                renderPaperPerformance();
                 renderConfig();
                 return;
             }
@@ -497,6 +606,7 @@ async function fetchBalance() {
             const cash = cfg.cash_balance != null ? formatUSD(cfg.cash_balance) : '--';
             const reserved = cfg.reserved_balance != null ? formatUSD(cfg.reserved_balance) : '--';
             setText('balance-status', `LOCAL-SIM-100U · 配置回退 · 现金 ${cash} / 占用 ${reserved}`);
+            renderPaperPerformance();
             renderConfig();
             return;
         }
@@ -506,6 +616,7 @@ async function fetchBalance() {
 
     setText('usdc-balance', '--');
     setText('balance-status', fallbackError);
+    renderPaperPerformance();
 }
 
 async function fetchRealBalance() {
@@ -548,7 +659,7 @@ async function fetchTrades() {
         if (data.error || !Array.isArray(data)) {
             const items = data.data || data.trades || data;
             if (!Array.isArray(items)) {
-                tbody.innerHTML = `<tr><td colspan="5" class="empty-row">${data.error || getEmptyTradeMessage()}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="${getTradeColspan()}" class="empty-row">${data.error || getEmptyTradeMessage()}</td></tr>`;
                 setText('trade-count', '0 笔');
                 return;
             }
@@ -557,7 +668,7 @@ async function fetchTrades() {
         }
         renderTrades(data);
     } catch (e) {
-        document.getElementById('trades-body').innerHTML = `<tr><td colspan="5" class="empty-row">${getEmptyTradeMessage()}</td></tr>`;
+        document.getElementById('trades-body').innerHTML = `<tr><td colspan="${getTradeColspan()}" class="empty-row">${getEmptyTradeMessage()}</td></tr>`;
     }
 }
 
@@ -566,11 +677,11 @@ function renderTrades(trades) {
     setText('trade-count', trades.length + ' 笔');
 
     if (!trades.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="empty-row">${getEmptyTradeMessage()}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${getTradeColspan()}" class="empty-row">${getEmptyTradeMessage()}</td></tr>`;
         return;
     }
 
-    const rows = trades.slice(0, 8).map((t) => {
+    const rows = trades.map((t) => {
         const side = String(firstValue(t.side, t.type, '') || '').toUpperCase();
         const outcome = String(firstValue(t.outcome, t.outcome_name, t.label, '') || '').toUpperCase();
         const sideText = side.includes('BUY')
@@ -581,20 +692,50 @@ function renderTrades(trades) {
         const sideTag = `<span class="tag ${side.includes('BUY') ? 'tag-buy' : side.includes('SELL') ? 'tag-sell' : 'tag-ok'}">${sideText.trim()}</span>`;
 
         const rawStatus = String(firstValue(t.status, t.tradeStatus, t.state, '') || '').toUpperCase();
-        let statusTag = '<span class="tag tag-ok">成交</span>';
-        if (rawStatus.includes('TAKE_PROFIT')) statusTag = '<span class="tag tag-buy">止盈</span>';
-        else if (rawStatus.includes('STOP_LOSS')) statusTag = '<span class="tag tag-sell">止损</span>';
-        else if (rawStatus.includes('TIME_EXIT')) statusTag = '<span class="tag tag-ok">到时离场</span>';
-        else if (rawStatus.includes('OPEN')) statusTag = '<span class="tag tag-ok">已开仓</span>';
-        else if (rawStatus.includes('RESOLUTION')) statusTag = '<span class="tag tag-ok">结算离场</span>';
-        else if (!rawStatus) statusTag = '<span class="tag tag-ok">公开成交</span>';
+        const isOpenAction = side.includes('BUY') || rawStatus.includes('OPEN');
+        const operationTag = `<span class="tag ${isOpenAction ? 'tag-buy' : 'tag-sell'}">${isOpenAction ? '开仓' : '平仓'}</span>`;
 
         const time = shortTime(firstValue(t.created_at, t.timestamp, t.match_time, t.time));
         const amountRaw = firstValue(t.amount_display, t.size_display, t.size, t.amount, t.quantity, t.lastSize);
         const amount = amountRaw == null ? '--' : String(amountRaw);
         const price = firstNumber(t.price, t.avgPrice, t.avg_price, t.executionPrice);
+        const market = firstValue(t.market, t.question, t.title, t.name, '--');
+        const note = firstValue(t.note, t.description, t.reason, '');
+        const realizedPnl = firstNumber(t.realized_profit, t.realizedPnl, t.pnl, t.profit, extractPnlFromText(note));
 
-        return `<tr><td>${time}</td><td>${sideTag}</td><td>${amount}</td><td>${price != null ? price.toFixed(4) : '--'}</td><td>${statusTag}</td></tr>`;
+        let resultTag = '<span class="tag tag-ok">进行中</span>';
+        let resultValue = '<span class="trade-result-value mono">--</span>';
+        if (!isOpenAction && realizedPnl != null) {
+            if (realizedPnl > 0) resultTag = '<span class="tag tag-buy">盈利</span>';
+            else if (realizedPnl < 0) resultTag = '<span class="tag tag-sell">亏损</span>';
+            else resultTag = '<span class="tag tag-ok">保本</span>';
+            resultValue = `<span class="trade-result-value mono ${realizedPnl > 0 ? 'c-green' : realizedPnl < 0 ? 'c-red' : 'c-amber'}">${formatSignedUSD(realizedPnl)}</span>`;
+        } else if (!isOpenAction) {
+            if (rawStatus.includes('TAKE_PROFIT')) {
+                resultTag = '<span class="tag tag-buy">止盈</span>';
+            } else if (rawStatus.includes('STOP_LOSS')) {
+                resultTag = '<span class="tag tag-sell">止损</span>';
+            } else if (rawStatus.includes('TIME_EXIT') || rawStatus.includes('RESOLUTION')) {
+                resultTag = '<span class="tag tag-ok">离场</span>';
+            } else {
+                resultTag = '<span class="tag tag-ok">已平仓</span>';
+            }
+        }
+
+        const detailParts = [`<div class="trade-market">${market}</div>`];
+        if (note) {
+            detailParts.push(`<div class="trade-note">${note}</div>`);
+        }
+
+        return `<tr>
+            <td>${time}</td>
+            <td>${operationTag}</td>
+            <td>${sideTag}</td>
+            <td>${amount}</td>
+            <td>${price != null ? price.toFixed(4) : '--'}</td>
+            <td><div class="trade-result">${resultTag}${resultValue}</div></td>
+            <td><div class="trade-detail">${detailParts.join('')}</div></td>
+        </tr>`;
     }).join('');
 
     tbody.innerHTML = rows;
@@ -677,6 +818,7 @@ async function fetchOrders() {
         }
 
         container.innerHTML = positions.slice(0, 6).map((p) => {
+            const positionId = firstValue(p.id, p.position_id, p.market_slug, p.market, p.question, '--');
             const outcome = String(firstValue(p.outcome, p.outcome_name, p.label, '') || '').toUpperCase();
             const entryPrice = firstNumber(p.entry_price, p.avgPrice, p.avg_price, p.buy_price, p.price);
             const markPrice = firstNumber(p.mark_price, p.current_price, p.currentPrice, p.current_price_value, p.price);
@@ -699,22 +841,52 @@ async function fetchOrders() {
             }
 
             const endTime = shortTime(firstValue(p.end_date, p.endDate, p.expiration, p.expiry));
-            const meta = `${formatUSD(stake)} -> ${formatUSD(liquidationValue != null ? liquidationValue : currentValue)} · 浮盈 ${formatSignedUSD(pnl)}`;
-            const riskParts = [
-                `入场 ask ${askPrice != null ? askPrice.toFixed(4) : (entryPrice != null ? entryPrice.toFixed(4) : '--')}`,
-                `当前 bid ${bidPrice != null ? bidPrice.toFixed(4) : '--'}`,
-                `中间价 ${markPrice != null ? markPrice.toFixed(4) : '--'}`,
-            ];
-            if (spread != null) riskParts.push(`点差 ${(spread * 100).toFixed(1)}¢`);
-            riskParts.push(`到期 ${endTime}`);
-            const risk = riskParts.join(' · ');
             const label = firstValue(p.market, p.question, p.title, p.name, '--');
+            const pnlClass = pnl != null && pnl > 0 ? 'is-profit' : pnl != null && pnl < 0 ? 'is-loss' : 'is-flat';
+            const spreadText = spread != null ? `${(spread * 100).toFixed(1)}¢` : '--';
+            const liquidationText = formatUSD(liquidationValue != null ? liquidationValue : currentValue);
+            const expandedClass = dashboardState.expandedPositionId === positionId ? ' is-expanded' : '';
+            const collapsedSummary = [
+                `本金 ${formatUSD(stake)}`,
+                `可卖 ${liquidationText}`,
+                `到期 ${endTime}`,
+            ].join(' · ');
 
-            return `<div class="order-item">
-                <span class="tag ${pnl != null && pnl >= 0 ? 'tag-buy' : 'tag-sell'}">${outcome || '持仓'}</span>
-                <span class="mono">${meta}</span>
-                <span class="pos-label">${label}</span>
-                <span class="order-risk mono">${risk}</span>
+            return `<div class="order-item position-card ${pnlClass}${expandedClass}" data-position-id="${positionId}">
+                <button class="position-toggle" type="button" aria-expanded="${expandedClass ? 'true' : 'false'}" onclick="togglePositionCard(this)">
+                    <div class="position-card-top">
+                        <div class="position-card-main">
+                            <span class="tag ${pnl != null && pnl >= 0 ? 'tag-buy' : 'tag-sell'}">${outcome || '持仓'}</span>
+                            <span class="position-market">${label}</span>
+                        </div>
+                        <div class="position-pnl-block">
+                            <span class="position-pnl-label">浮盈</span>
+                            <strong class="position-pnl-value mono">${formatSignedUSD(pnl)}</strong>
+                        </div>
+                    </div>
+                    <div class="position-collapsed-row">
+                        <span class="position-collapsed-summary mono">${collapsedSummary}</span>
+                        <span class="position-expand-indicator">
+                            <span class="position-expand-label">展开详情</span>
+                            <span class="position-expand-chevron">⌄</span>
+                        </span>
+                    </div>
+                </button>
+                <div class="position-card-details">
+                    <div class="position-value-strip mono">
+                        <span class="position-value-item"><span>本金</span><strong>${formatUSD(stake)}</strong></span>
+                        <span class="position-value-arrow">→</span>
+                        <span class="position-value-item"><span>可卖</span><strong>${liquidationText}</strong></span>
+                    </div>
+                    <div class="position-stat-grid">
+                        <div class="position-stat"><span>入场 ask</span><strong class="mono">${askPrice != null ? askPrice.toFixed(4) : (entryPrice != null ? entryPrice.toFixed(4) : '--')}</strong></div>
+                        <div class="position-stat"><span>当前 bid</span><strong class="mono">${bidPrice != null ? bidPrice.toFixed(4) : '--'}</strong></div>
+                        <div class="position-stat"><span>中间价</span><strong class="mono">${markPrice != null ? markPrice.toFixed(4) : '--'}</strong></div>
+                        <div class="position-stat"><span>点差</span><strong class="mono">${spreadText}</strong></div>
+                        <div class="position-stat"><span>份额</span><strong class="mono">${shares != null ? shares.toFixed(4) : '--'}</strong></div>
+                        <div class="position-stat"><span>到期</span><strong class="mono">${endTime}</strong></div>
+                    </div>
+                </div>
             </div>`;
         }).join('');
     } catch (e) {
@@ -733,10 +905,36 @@ async function fetchConfig() {
             dashboardState.controlError = '';
             renderTradingControl();
         }
+        renderPaperPerformance();
         renderConfig();
     } catch (e) {
         // ignore config fetch failures
     }
+}
+
+function togglePositionCard(button) {
+    const card = button && button.closest('.position-card');
+    if (!card) return;
+    const container = card.parentElement;
+    const willExpand = !card.classList.contains('is-expanded');
+    const positionId = card.getAttribute('data-position-id');
+
+    if (container) {
+        container.querySelectorAll('.position-card.is-expanded').forEach((item) => {
+            if (item === card) return;
+            item.classList.remove('is-expanded');
+            const toggle = item.querySelector('.position-toggle');
+            const label = item.querySelector('.position-expand-label');
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            if (label) label.textContent = '展开详情';
+        });
+    }
+
+    card.classList.toggle('is-expanded', willExpand);
+    button.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+    const label = card.querySelector('.position-expand-label');
+    if (label) label.textContent = willExpand ? '收起详情' : '展开详情';
+    dashboardState.expandedPositionId = willExpand ? positionId : null;
 }
 
 /* ---- 全局刷新 ---- */
@@ -762,6 +960,7 @@ async function refreshAll() {
 
 window.setAccountMode = setAccountMode;
 window.toggleTrading = toggleTrading;
+window.togglePositionCard = togglePositionCard;
 window.refreshAll = refreshAll;
 
 renderAccountMode();

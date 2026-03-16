@@ -73,6 +73,9 @@ def load_env():
         "POLYMARKET_WALLET_ADDRESS",
         "AI_UP_THRESHOLD",
         "AI_DOWN_THRESHOLD",
+        "AI_ENABLED",
+        "AI_MODEL",
+        "AI_DECISION_INTERVAL_SECONDS",
     }
     for key in override_keys:
         if key in os.environ:
@@ -636,17 +639,17 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "min_probability_diff": env.get("MIN_PROBABILITY_DIFF", "0.05"),
                 "trading_mode": env.get("TRADING_MODE", "paper"),
                 "take_profit_percent": env.get("TAKE_PROFIT_PERCENT", "0.18"),
-                "take_profit_usd": env.get("PAPER_TAKE_PROFIT_USD", "1"),
+                "take_profit_usd": env.get("PAPER_TAKE_PROFIT_USD", "0.12"),
                 "min_entry_price": env.get("PAPER_MIN_ENTRY_PRICE", "0.15"),
                 "max_entry_price": env.get("PAPER_MAX_ENTRY_PRICE", "0.60"),
-                "max_spread": env.get("PAPER_MAX_SPREAD", "0.04"),
+                "max_spread": env.get("PAPER_MAX_SPREAD", "0.06"),
                 "min_top_book_size": env.get("PAPER_MIN_TOP_BOOK_SIZE", "25"),
-                "min_minutes_to_expiry": env.get("PAPER_MIN_MINUTES_TO_EXPIRY", "20"),
+                "min_minutes_to_expiry": env.get("PAPER_MIN_MINUTES_TO_EXPIRY", "3"),
                 "max_new_positions_per_cycle": env.get("PAPER_MAX_NEW_POSITIONS_PER_CYCLE", "1"),
                 "market_interval_minutes": env.get("PAPER_MARKET_INTERVAL_MINUTES", "15"),
                 "forward_slot_count": env.get("PAPER_FORWARD_SLOT_COUNT", "8"),
                 "paper_start_balance": env.get("PAPER_START_BALANCE", "100"),
-                "paper_max_open_positions": env.get("PAPER_MAX_OPEN_POSITIONS", "6"),
+                "paper_max_open_positions": env.get("PAPER_MAX_OPEN_POSITIONS", "1"),
                 "stop_loss_enabled": env.get("STOP_LOSS_ENABLED", "true"),
                 "stop_loss_percent": env.get("STOP_LOSS_PERCENT", "0.10"),
                 "market_id": (state.get("market", {}).get("slug") or env.get("BTC_UPDOWN_MARKET_ID", ""))[:32] + "...",
@@ -657,6 +660,7 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "paper_profit": report.get("profit"),
                 "paper_roi_percent": report.get("roi_percent"),
                 "paper_balance": summary.get("ending_balance"),
+                "paper_session_started_at": state.get("session_started_at") or summary.get("session_started_at") or report.get("session_started_at"),
                 "cash_balance": summary.get("cash_balance"),
                 "reserved_balance": summary.get("reserved_balance"),
                 "open_positions": summary.get("open_positions"),
@@ -665,7 +669,7 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "daily_change_percent": signal.get("change_percent"),
                 "signal_reason": signal.get("reason"),
                 "strategy_name": report.get("strategy"),
-                "exit_rule": f"best bid 浮盈 > ${env.get('PAPER_TAKE_PROFIT_USD', '1')} 提前卖出，否则到期离场",
+                "exit_rule": f"best bid 浮盈 > ${env.get('PAPER_TAKE_PROFIT_USD', '0.12')} 提前卖出，否则到期离场",
                 "trading_enabled": control.get("trading_enabled", True),
             }
             send_json(self, config)

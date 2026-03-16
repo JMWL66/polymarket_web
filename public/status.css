@@ -383,6 +383,24 @@ body::after {
     box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(79, 140, 255, 0.08);
 }
 
+.asset-change-card {
+    border-color: rgba(240, 185, 11, 0.22);
+}
+
+.asset-change-card.is-positive {
+    border-color: rgba(22, 199, 132, 0.36);
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42), 0 0 24px rgba(22, 199, 132, 0.12);
+}
+
+.asset-change-card.is-negative {
+    border-color: rgba(255, 91, 119, 0.34);
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42), 0 0 24px rgba(255, 91, 119, 0.12);
+}
+
+.asset-change-card.is-flat {
+    border-color: rgba(240, 185, 11, 0.24);
+}
+
 .price-card {
     border-color: rgba(89, 216, 255, 0.24);
 }
@@ -809,10 +827,47 @@ body::after {
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     font-family: "JetBrains Mono", monospace;
     font-size: 0.76rem;
+    vertical-align: top;
 }
 
 .data-table tr:hover td {
     background: rgba(240, 185, 11, 0.04);
+}
+
+.trade-result {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+}
+
+.trade-result-value {
+    font-size: 0.74rem;
+    line-height: 1.2;
+}
+
+.trade-detail {
+    min-width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.trade-market {
+    color: var(--text);
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 0.79rem;
+    line-height: 1.4;
+    font-weight: 500;
+}
+
+.trade-note {
+    color: var(--text-muted);
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    white-space: normal;
+    word-break: break-word;
 }
 
 .empty-row {
@@ -884,6 +939,61 @@ body::after {
     box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.08), 0 0 18px rgba(251, 191, 36, 0.08);
 }
 
+.thought-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.thought-summary {
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 0.84rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.thought-meta-line {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+}
+
+.thought-sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.thought-section {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.thought-section-title {
+    margin-bottom: 8px;
+    color: var(--amber);
+    font-size: 0.74rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.thought-list {
+    margin-left: 18px;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    line-height: 1.6;
+}
+
+.thought-list li + li {
+    margin-top: 5px;
+}
+
 .decision-main {
     padding: 16px;
     border-radius: 16px;
@@ -941,6 +1051,203 @@ body::after {
     width: 100%;
     color: var(--text-muted);
     font-size: 0.72rem;
+}
+
+.position-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 14px;
+}
+
+.position-card.is-profit {
+    border-color: rgba(22, 199, 132, 0.18);
+}
+
+.position-card.is-loss {
+    border-color: rgba(255, 91, 119, 0.18);
+}
+
+.position-toggle {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.position-toggle:focus-visible {
+    outline: 1px solid rgba(240, 185, 11, 0.45);
+    outline-offset: 4px;
+    border-radius: 10px;
+}
+
+.position-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.position-card-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-width: 0;
+}
+
+.position-market {
+    color: var(--text);
+    font-size: 0.84rem;
+    line-height: 1.45;
+    font-weight: 500;
+}
+
+.position-pnl-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    min-width: 86px;
+}
+
+.position-pnl-label {
+    color: var(--text-muted);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.position-pnl-value {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.position-card.is-profit .position-pnl-value {
+    color: var(--green);
+}
+
+.position-card.is-loss .position-pnl-value {
+    color: var(--red);
+}
+
+.position-card.is-flat .position-pnl-value {
+    color: var(--amber);
+}
+
+.position-collapsed-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 2px;
+}
+
+.position-collapsed-summary {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    line-height: 1.45;
+}
+
+.position-expand-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--amber);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+.position-expand-chevron {
+    display: inline-flex;
+    font-size: 0.9rem;
+    transition: transform 0.18s ease;
+}
+
+.position-card-details {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.position-card.is-expanded {
+    border-color: rgba(240, 185, 11, 0.24);
+}
+
+.position-card.is-expanded .position-card-details {
+    display: flex;
+}
+
+.position-card.is-expanded .position-expand-chevron {
+    transform: rotate(180deg);
+}
+
+.position-value-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.position-value-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.position-value-item span {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.position-value-item strong {
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.position-value-arrow {
+    color: rgba(255, 255, 255, 0.36);
+    font-size: 1rem;
+}
+
+.position-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.position-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.position-stat span {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+}
+
+.position-stat strong {
+    color: var(--text);
+    font-size: 0.78rem;
+    line-height: 1.2;
 }
 
 .config-grid {
@@ -1126,6 +1433,33 @@ body::after {
         font-size: 0.76rem;
     }
 
+    .thought-card {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .thought-summary {
+        font-size: 0.78rem;
+        line-height: 1.55;
+    }
+
+    .thought-meta-line {
+        font-size: 0.68rem;
+    }
+
+    .thought-section {
+        padding: 8px 10px;
+    }
+
+    .thought-section-title {
+        font-size: 0.68rem;
+        margin-bottom: 6px;
+    }
+
+    .thought-list {
+        font-size: 0.7rem;
+    }
+
     .decision-main {
         padding: 12px 14px;
         min-height: 82px;
@@ -1188,6 +1522,50 @@ body::after {
     .order-item {
         padding: 8px 10px;
         margin-bottom: 6px;
+    }
+
+    .position-card {
+        gap: 10px;
+        padding: 10px 12px;
+    }
+
+    .position-collapsed-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .position-collapsed-summary {
+        font-size: 0.7rem;
+    }
+
+    .position-market {
+        font-size: 0.78rem;
+    }
+
+    .position-pnl-value {
+        font-size: 0.92rem;
+    }
+
+    .position-value-strip {
+        padding: 8px 10px;
+    }
+
+    .position-value-item strong {
+        font-size: 0.92rem;
+    }
+
+    .position-stat-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .position-stat {
+        padding: 7px 8px;
+    }
+
+    .position-stat strong {
+        font-size: 0.72rem;
     }
 
     .empty-row {
@@ -1275,6 +1653,10 @@ body::after {
     }
 
     .orderbook-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .thought-sections {
         grid-template-columns: 1fr;
     }
 

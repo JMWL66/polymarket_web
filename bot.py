@@ -136,18 +136,18 @@ STOP_LOSS_ENABLED = bool(os.getenv("STOP_LOSS_ENABLED", "true").lower() == "true
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", "0.10"))  # 止损比例
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", "0.18"))
 TRADING_MODE = os.getenv("TRADING_MODE", "paper").strip().lower()
-PAPER_START_BALANCE = float(os.getenv("PAPER_START_BALANCE", "10.25"))
+PAPER_START_BALANCE = float(os.getenv("PAPER_START_BALANCE", "100"))
 PAPER_BET_AMOUNT = float(os.getenv("PAPER_BET_AMOUNT", str(BET_AMOUNT)))
 TIME_EXIT_SECONDS = int(os.getenv("TIME_EXIT_SECONDS", "45"))
 PAPER_MIN_ENTRY_PRICE = float(os.getenv("PAPER_MIN_ENTRY_PRICE", "0.15"))
 PAPER_MAX_ENTRY_PRICE = float(os.getenv("PAPER_MAX_ENTRY_PRICE", "0.60"))
 PAPER_TAKE_PROFIT_USD = float(os.getenv("PAPER_TAKE_PROFIT_USD", "0.12"))
 PAPER_POLL_INTERVAL_SECONDS = int(os.getenv("PAPER_POLL_INTERVAL_SECONDS", "15"))
-PAPER_MAX_OPEN_POSITIONS = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "4"))
+PAPER_MAX_OPEN_POSITIONS = int(os.getenv("PAPER_MAX_OPEN_POSITIONS", "1"))
 PAPER_MAX_SPREAD = float(os.getenv("PAPER_MAX_SPREAD", "0.06"))
 PAPER_MIN_TOP_BOOK_SIZE = float(os.getenv("PAPER_MIN_TOP_BOOK_SIZE", "25"))
 PAPER_MIN_MINUTES_TO_EXPIRY = int(os.getenv("PAPER_MIN_MINUTES_TO_EXPIRY", "3"))
-PAPER_MAX_NEW_POSITIONS_PER_CYCLE = int(os.getenv("PAPER_MAX_NEW_POSITIONS_PER_CYCLE", "2"))
+PAPER_MAX_NEW_POSITIONS_PER_CYCLE = int(os.getenv("PAPER_MAX_NEW_POSITIONS_PER_CYCLE", "1"))
 PAPER_MARKET_INTERVAL_MINUTES = int(os.getenv("PAPER_MARKET_INTERVAL_MINUTES", "15"))
 PAPER_FORWARD_SLOT_COUNT = int(os.getenv("PAPER_FORWARD_SLOT_COUNT", "8"))
 PAPER_WALLET_LABEL = os.getenv("PAPER_WALLET_LABEL", "LOCAL-SIM")
@@ -155,6 +155,16 @@ PAPER_WALLET_LABEL = os.getenv("PAPER_WALLET_LABEL", "LOCAL-SIM")
 # BTC 配置
 BTC_PRICE_SOURCE = os.getenv("BTC_PRICE_SOURCE", "binance")  # binance 或 coingecko
 NY_TZ = ZoneInfo("America/New_York")
+
+# AI 交易配置（OpenAI 兼容接口）
+AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
+AI_DECISION_INTERVAL_SECONDS = int(os.getenv("AI_DECISION_INTERVAL_SECONDS", "180"))
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_compatible")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.openai.com/v1")
+AI_API_KEY = os.getenv("AI_API_KEY", "")
+AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
+AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.2"))
+AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "700"))
 
 # Market ID (需要你自己填)
 # 可以填: 
@@ -462,51 +472,92 @@ class BTCDataprovider:
             return None
 
 
-class AIPredictor:
-    """AI 预测模块 - 判断 BTC 5分钟后涨跌"""
-    
+class AIDecisionEngine:
+    """使用 OpenAI 兼容接口做结构化交易判断；无密钥时自动回退到规则策略。"""
+
     def __init__(self):
-        # 可配置阈值
-        self.up_threshold = float(os.getenv("AI_UP_THRESHOLD", "0.02"))  # 涨超 0.02% 预测涨
-        self.down_threshold = float(os.getenv("AI_DOWN_THRESHOLD", "-0.02"))  # 跌超 0.02% 预测跌
-        
-        # 简单移动平均参数
-        self.ma_period = int(os.getenv("MA_PERIOD", "5"))  # 5 分钟 MA
-    
-    async def predict(self, btc_data: dict, history: list) -> str:
-        """
-        预测 BTC 5分钟后走势
-        返回: "UP" / "DOWN" / "HOLD"
-        """
-        if not btc_data:
-            return "HOLD"
-        
-        price = btc_data.get("price", 0)
-        change_24h = btc_data.get("change_24h", 0)
-        
-        # 简单策略 1: 基于 24h 趋势
-        if change_24h > 1.0:
-            # 24h 大涨，继续看涨
-            trend = "UP"
-        elif change_24h < -1.0:
-            # 24h 大跌，继续看跌
-            trend = "DOWN"
-        else:
-            # 震荡行情，看短期动量
-            if len(history) >= 2:
-                # 计算最近 2 个 5min 变化
-                recent_change = (history[-1]["price"] - history[-2]["price"]) / history[-2]["price"] * 100
-                if recent_change > self.up_threshold:
-                    trend = "UP"
-                elif recent_change < self.down_threshold:
-                    trend = "DOWN"
-                else:
-                    trend = "HOLD"
-            else:
-                trend = "HOLD"
-        
-        print(f"🔮 AI 预测: {trend} (24h 变化: {change_24h:+.2f}%)")
-        return trend
+        self.enabled = AI_ENABLED
+        self.base_url = AI_BASE_URL.rstrip("/")
+        self.api_key = AI_API_KEY
+        self.model = AI_MODEL
+        self.temperature = AI_TEMPERATURE
+        self.max_tokens = AI_MAX_TOKENS
+
+    def build_rule_fallback(self, payload: dict, fallback_reason: str) -> dict:
+        btc = payload.get("btc", {})
+        daily_open = safe_float(payload.get("daily_open"), 0.0) or 0.0
+        current_price = safe_float(btc.get("price"), 0.0) or 0.0
+        prediction = "HOLD"
+        action = "HOLD"
+        if current_price > daily_open:
+            prediction = "UP"
+            action = "BUY"
+        elif current_price < daily_open:
+            prediction = "DOWN"
+            action = "BUY"
+
+        return {
+            "prediction": prediction,
+            "action": action,
+            "confidence": 0.35,
+            "reasoning": f"AI 不可用，回退为规则策略：现价 {current_price:,.2f} 与今开 {daily_open:,.2f} 比较。{fallback_reason}",
+            "key_factors": [
+                f"BTC 现价 {current_price:,.2f}",
+                f"今开 {daily_open:,.2f}",
+                f"24h 涨跌 {safe_float(btc.get('change_24h'), 0.0) or 0.0:+.2f}%",
+            ],
+            "risk_flags": ["当前为规则回退，不是真实 LLM 输出"],
+            "close_positions": False,
+        }
+
+    def build_prompt(self, payload: dict) -> tuple[str, str]:
+        system = (
+            "你是一个谨慎的 Polymarket BTC 短线纸上交易分析器。"
+            "你只能输出严格 JSON，不要输出 markdown。"
+            "目标：每 3 分钟评估一次是否 BUY / SELL / HOLD。"
+            "BUY 表示允许按目标方向寻找可交易盘口开仓；SELL 表示建议把当前持仓平掉；HOLD 表示观望。"
+            "prediction 只能是 UP、DOWN、HOLD。action 只能是 BUY、SELL、HOLD。"
+            "必须提供 reasoning、key_factors、risk_flags、confidence。"
+            "如果信号不够强，宁可 HOLD。"
+        )
+        user = json.dumps(payload, ensure_ascii=False)
+        return system, user
+
+    def call_model(self, payload: dict) -> dict:
+        if not self.enabled:
+            return self.build_rule_fallback(payload, "AI_ENABLED=false")
+        if not self.api_key:
+            return self.build_rule_fallback(payload, "未配置 AI_API_KEY")
+
+        system, user = self.build_prompt(payload)
+        body = {
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        resp = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=body, timeout=45)
+        resp.raise_for_status()
+        data = resp.json()
+        content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}").strip()
+        parsed = json.loads(content)
+        return {
+            "prediction": str(parsed.get("prediction", "HOLD")).upper(),
+            "action": str(parsed.get("action", "HOLD")).upper(),
+            "confidence": round(float(parsed.get("confidence", 0.0)), 4),
+            "reasoning": str(parsed.get("reasoning", ""))[:1200],
+            "key_factors": [str(x)[:220] for x in (parsed.get("key_factors") or [])[:6]],
+            "risk_flags": [str(x)[:220] for x in (parsed.get("risk_flags") or [])[:6]],
+            "close_positions": bool(parsed.get("close_positions", str(parsed.get("action", "")).upper() == "SELL")),
+        }
 
 
 class TradingBot:
@@ -1094,6 +1145,8 @@ class ContinuousPaperTradingBot:
         self.wallet_label = PAPER_WALLET_LABEL or short_wallet(POLYMARKET_WALLET_ADDRESS) or "LOCAL-SIM"
         self.state = self.load_or_init_state()
         self.stats = self.state["stats"]
+        self.ai_engine = AIDecisionEngine()
+        self.last_ai_signal = self.state.get("last_signal", {})
 
     def load_or_init_state(self) -> dict:
         state = load_json_file(PAPER_STATE_FILE, {})
@@ -1118,12 +1171,15 @@ class ContinuousPaperTradingBot:
         state.setdefault("report", {})
         state.setdefault("market", {})
         state.setdefault("last_signal", {})
+        state.setdefault("session_started_at", state.get("generated_at") or datetime.now(timezone.utc).isoformat())
         return state
 
     def build_default_state(self) -> dict:
+        started_at = datetime.now(timezone.utc).isoformat()
         return {
             "mode": "paper_live",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": started_at,
+            "session_started_at": started_at,
             "wallet": self.wallet_label,
             "cash_balance": round(PAPER_START_BALANCE, 4),
             "positions": [],
@@ -1138,6 +1194,7 @@ class ContinuousPaperTradingBot:
             },
             "summary": {
                 "starting_balance": PAPER_START_BALANCE,
+                "session_started_at": started_at,
                 "cash_balance": PAPER_START_BALANCE,
                 "reserved_balance": 0.0,
                 "ending_balance": PAPER_START_BALANCE,
@@ -1152,41 +1209,153 @@ class ContinuousPaperTradingBot:
             "last_signal": {},
         }
 
-    def get_daily_signal(self) -> dict:
-        btc_data = BTCDataprovider.get_price_with_change()
-        if not btc_data:
-            raise ValueError("无法获取 BTC 实时价格")
-
+    def get_daily_open(self) -> float:
         url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1"
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         klines = resp.json()
         if not klines:
             raise ValueError("无法获取 BTC 日线数据")
+        return float(klines[-1][1])
 
-        today_kline = klines[-1]
-        daily_open = float(today_kline[1])
+    def get_recent_klines(self, interval: str, limit: int = 12) -> list:
+        url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval={interval}&limit={limit}"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        raw = resp.json()
+        klines = []
+        for item in raw:
+            klines.append({
+                "open_time": item[0],
+                "open": float(item[1]),
+                "high": float(item[2]),
+                "low": float(item[3]),
+                "close": float(item[4]),
+                "volume": float(item[5]),
+            })
+        return klines
+
+    def summarize_market_candidates(self, snapshots: list, now_utc: datetime, market_cache: dict) -> list:
+        summary = []
+        for snapshot in snapshots[:6]:
+            end_dt = iso_to_utc_dt(snapshot["endDate"]) if snapshot.get("endDate") else None
+            minutes_to_expiry = round(((end_dt - now_utc).total_seconds() / 60), 2) if end_dt else None
+            micro = self.get_cached_microstructure(snapshot, market_cache)
+            labels = micro.get("labels") or []
+            item = {
+                "slug": snapshot.get("resolved_slug"),
+                "question": snapshot.get("question"),
+                "accepting_orders": bool(snapshot.get("acceptingOrders")),
+                "minutes_to_expiry": minutes_to_expiry,
+            }
+            for label in labels[:2]:
+                quote = micro.get("outcomes", {}).get(label, {})
+                item[label] = {
+                    "best_bid": quote.get("best_bid"),
+                    "best_ask": quote.get("best_ask"),
+                    "spread": quote.get("spread"),
+                    "bid_size": quote.get("bid_size"),
+                    "ask_size": quote.get("ask_size"),
+                }
+            summary.append(item)
+        return summary
+
+    def get_ai_signal(self, snapshots: list, now_utc: datetime, market_cache: dict) -> dict:
+        cached_signal = self.last_ai_signal or self.state.get("last_signal") or {}
+        cached_at = cached_signal.get("generated_at")
+        if cached_at:
+            try:
+                age_seconds = (now_utc - iso_to_utc_dt(cached_at)).total_seconds()
+                if age_seconds < AI_DECISION_INTERVAL_SECONDS:
+                    return cached_signal
+            except Exception:
+                pass
+
+        btc_data = BTCDataprovider.get_price_with_change()
+        if not btc_data:
+            raise ValueError("无法获取 BTC 实时价格")
+
+        daily_open = self.get_daily_open()
         current_price = float(btc_data["price"])
         change_percent = ((current_price - daily_open) / daily_open * 100) if daily_open else 0.0
+        recent_3m = self.get_recent_klines("3m", 8)
+        recent_15m = self.get_recent_klines("15m", 8)
+        recent_1h = self.get_recent_klines("1h", 6)
+        positions = [{
+            "market": p.get("market"),
+            "outcome": p.get("outcome"),
+            "entry_price": p.get("entry_price"),
+            "bid_price": p.get("bid_price"),
+            "mark_price": p.get("mark_price"),
+            "unrealized_profit": p.get("unrealized_profit"),
+            "minutes_to_expiry": round(((iso_to_utc_dt(p["end_date"]) - now_utc).total_seconds() / 60), 2) if p.get("end_date") else None,
+        } for p in self.state.get("positions", [])[:4]]
 
-        if current_price > daily_open:
-            prediction = "UP"
-            reason = f"BTC 当前价 {current_price:,.2f} 高于今日日线开盘 {daily_open:,.2f}"
-        elif current_price < daily_open:
-            prediction = "DOWN"
-            reason = f"BTC 当前价 {current_price:,.2f} 低于今日日线开盘 {daily_open:,.2f}"
-        else:
+        payload = {
+            "timestamp_utc": now_utc.isoformat(),
+            "strategy_constraints": {
+                "market_interval_minutes": PAPER_MARKET_INTERVAL_MINUTES,
+                "bet_amount": PAPER_BET_AMOUNT,
+                "min_entry_price": PAPER_MIN_ENTRY_PRICE,
+                "max_entry_price": PAPER_MAX_ENTRY_PRICE,
+                "max_spread": PAPER_MAX_SPREAD,
+                "min_top_book_size": PAPER_MIN_TOP_BOOK_SIZE,
+                "min_minutes_to_expiry": PAPER_MIN_MINUTES_TO_EXPIRY,
+                "take_profit_usd": PAPER_TAKE_PROFIT_USD,
+                "max_open_positions": PAPER_MAX_OPEN_POSITIONS,
+            },
+            "btc": btc_data,
+            "daily_open": round(daily_open, 2),
+            "daily_change_percent": round(change_percent, 4),
+            "recent_3m_klines": recent_3m,
+            "recent_15m_klines": recent_15m,
+            "recent_1h_klines": recent_1h,
+            "open_positions": positions,
+            "candidate_markets": self.summarize_market_candidates(snapshots, now_utc, market_cache),
+        }
+
+        ai_result = self.ai_engine.call_model(payload)
+        prediction = ai_result.get("prediction", "HOLD")
+        if prediction not in {"UP", "DOWN", "HOLD"}:
             prediction = "HOLD"
-            reason = f"BTC 当前价与今日日线开盘 {daily_open:,.2f} 基本持平"
+        action = ai_result.get("action", "HOLD")
+        if action not in {"BUY", "SELL", "HOLD"}:
+            action = "HOLD"
 
-        return {
+        reason = ai_result.get("reasoning") or "AI 未提供理由"
+        factor_lines = [f"- {item}" for item in ai_result.get("key_factors", []) if item]
+        risk_lines = [f"- {item}" for item in ai_result.get("risk_flags", []) if item]
+        thought_markdown = "\n".join([
+            f"模型: {AI_MODEL}",
+            f"动作: {action} / 方向: {prediction} / 置信度: {float(ai_result.get('confidence', 0.0)):.2f}",
+            f"核心判断: {reason}",
+            "",
+            "关键依据:",
+            *(factor_lines or ["- 无"]),
+            "",
+            "风险提示:",
+            *(risk_lines or ["- 无"]),
+        ])
+
+        signal = {
+            "generated_at": now_utc.isoformat(),
             "prediction": prediction,
+            "action": action,
             "daily_open": round(daily_open, 2),
             "current_price": round(current_price, 2),
             "change_percent": round(change_percent, 4),
             "reason": reason,
             "btc_data": btc_data,
+            "ai_confidence": round(float(ai_result.get("confidence", 0.0)), 4),
+            "ai_key_factors": ai_result.get("key_factors", []),
+            "ai_risk_flags": ai_result.get("risk_flags", []),
+            "ai_thought_markdown": thought_markdown,
+            "ai_model": AI_MODEL,
+            "close_positions": bool(ai_result.get("close_positions", False)),
+            "decision_interval_seconds": AI_DECISION_INTERVAL_SECONDS,
         }
+        self.last_ai_signal = signal
+        return signal
 
     def build_today_slot_slugs(self, now_utc: datetime) -> list:
         now_ny = now_utc.astimezone(NY_TZ)
@@ -1450,6 +1619,7 @@ class ContinuousPaperTradingBot:
 
         self.state["summary"] = {
             "starting_balance": round(PAPER_START_BALANCE, 4),
+            "session_started_at": self.state.get("session_started_at"),
             "cash_balance": cash_balance,
             "reserved_balance": reserved_balance,
             "ending_balance": ending_balance,
@@ -1462,10 +1632,11 @@ class ContinuousPaperTradingBot:
 
         self.state["report"] = {
             "mode": "paper_live",
+            "session_started_at": self.state.get("session_started_at"),
             "wallet": self.wallet_label,
             "market_slug": (focus_market or {}).get("resolved_slug"),
             "market_question": (focus_market or {}).get("question"),
-            "strategy": "AI预测 + 当日BTC 15分钟盘口 + Order Book优化纸上交易",
+            "strategy": "LLM 决策 + 当日BTC 15分钟盘口 + Order Book优化纸上交易",
             "reason": reason,
             "profit": total_pnl,
             "roi_percent": round((total_pnl / PAPER_START_BALANCE) * 100, 2) if PAPER_START_BALANCE else 0.0,
@@ -1505,10 +1676,12 @@ class ContinuousPaperTradingBot:
             f"- 模式: {report.get('mode', 'paper_live')}",
             f"- 账户: {self.wallet_label}",
             f"- 策略: {report.get('strategy')}",
-            f"- AI预测: {signal.get('prediction', '--')}",
+            f"- AI模型: {signal.get('ai_model', AI_MODEL)}",
+            f"- AI预测: {signal.get('prediction', '--')} / 动作 {signal.get('action', '--')} / 置信度 {float(signal.get('ai_confidence', 0.0)):.2f}",
             f"- 日线参考: 开盘 {signal.get('daily_open', '--')} / 现价 {signal.get('current_price', '--')} / 变动 {signal.get('change_percent', '--')}%",
             f"- 入场条件: 目标方向 ask 介于 {PAPER_MIN_ENTRY_PRICE:.2f}-{PAPER_MAX_ENTRY_PRICE:.2f} / 点差 <= {PAPER_MAX_SPREAD:.2f} / 顶档卖盘 >= {PAPER_MIN_TOP_BOOK_SIZE:.0f} shares / 至少剩余 {PAPER_MIN_MINUTES_TO_EXPIRY} 分钟",
             f"- 提前止盈: best bid 浮盈 > ${PAPER_TAKE_PROFIT_USD:.2f}",
+            f"- AI 核心判断: {signal.get('reason', '--')}",
             f"- 当前权益: ${summary.get('ending_balance', 0.0):.4f}",
             f"- 可用现金: ${summary.get('cash_balance', 0.0):.4f}",
             f"- 已实现 / 未实现: {summary.get('realized_pnl', 0.0):+.4f} / {summary.get('unrealized_pnl', 0.0):+.4f} USDC",
@@ -1575,7 +1748,14 @@ class ContinuousPaperTradingBot:
                 "open_positions": summary.get("open_positions"),
                 "cash_balance": summary.get("cash_balance"),
                 "reserved_balance": summary.get("reserved_balance"),
-                "strategy_name": "AI预测 + 当日BTC 15分钟盘口 + Order Book筛选",
+                "strategy_name": "LLM 决策 + 当日BTC 15分钟盘口 + Order Book筛选",
+                "ai_action": signal.get("action") if signal else None,
+                "ai_confidence": signal.get("ai_confidence") if signal else None,
+                "ai_model": signal.get("ai_model") if signal else AI_MODEL,
+                "ai_thought_markdown": signal.get("ai_thought_markdown") if signal else None,
+                "ai_key_factors": signal.get("ai_key_factors") if signal else [],
+                "ai_risk_flags": signal.get("ai_risk_flags") if signal else [],
+                "ai_decision_interval_seconds": signal.get("decision_interval_seconds") if signal else AI_DECISION_INTERVAL_SECONDS,
                 "take_profit_usd": PAPER_TAKE_PROFIT_USD,
                 "min_entry_price": PAPER_MIN_ENTRY_PRICE,
                 "max_entry_price": PAPER_MAX_ENTRY_PRICE,
@@ -1698,7 +1878,7 @@ class ContinuousPaperTradingBot:
         print(f"🔴 {result}")
         return result
 
-    def refresh_open_positions(self, snapshots_by_slug: dict, now_utc: datetime, market_cache: dict) -> list:
+    def refresh_open_positions(self, snapshots_by_slug: dict, now_utc: datetime, market_cache: dict, signal: Optional[dict] = None) -> list:
         messages = []
         updated_positions = []
 
@@ -1750,7 +1930,11 @@ class ContinuousPaperTradingBot:
             end_dt = iso_to_utc_dt(position["end_date"]) if position.get("end_date") else None
             settlement_price = self.get_price_map(snapshot).get(position["outcome"])
 
-            if unrealized_profit > PAPER_TAKE_PROFIT_USD:
+            if signal and signal.get("action") == "SELL" and signal.get("close_positions"):
+                should_close = True
+                close_reason = "AI_EXIT"
+                exit_price = bid_price
+            elif unrealized_profit > PAPER_TAKE_PROFIT_USD:
                 should_close = True
                 close_reason = "TAKE_PROFIT_USD"
                 exit_price = bid_price
@@ -1781,6 +1965,8 @@ class ContinuousPaperTradingBot:
     def scan_entry_opportunities(self, snapshots: list, signal: dict, now_utc: datetime, market_cache: dict) -> tuple:
         messages = []
         hold_reason = ""
+        if signal.get("action") != "BUY":
+            return messages, f"AI 当前建议 {signal.get('action', 'HOLD')}，暂不新开仓"
         if signal["prediction"] == "HOLD":
             return messages, "AI 预测未形成明确方向，继续空仓等待"
 
@@ -1929,14 +2115,14 @@ class ContinuousPaperTradingBot:
     async def run_cycle(self):
         now_utc = datetime.now(timezone.utc)
         trading_enabled = load_trading_control().get("trading_enabled", True)
-        signal = self.get_daily_signal()
         snapshots = self.get_today_market_snapshots(now_utc)
         if not snapshots:
             raise ValueError("未找到当前窗口内的 BTC 15 分钟盘口")
 
         snapshots_by_slug = {snapshot.get("resolved_slug"): snapshot for snapshot in snapshots}
         market_cache = {}
-        close_messages = self.refresh_open_positions(snapshots_by_slug, now_utc, market_cache)
+        signal = self.get_ai_signal(snapshots, now_utc, market_cache)
+        close_messages = self.refresh_open_positions(snapshots_by_slug, now_utc, market_cache, signal=signal)
         if trading_enabled:
             open_messages, hold_reason = self.scan_entry_opportunities(snapshots, signal, now_utc, market_cache)
         else:
@@ -1981,6 +2167,8 @@ class ContinuousPaperTradingBot:
         print(f"   提前止盈: best bid 浮盈 > ${PAPER_TAKE_PROFIT_USD:.2f}")
         print(f"   最大同时持仓: {PAPER_MAX_OPEN_POSITIONS}")
         print(f"   单轮最多新开仓: {PAPER_MAX_NEW_POSITIONS_PER_CYCLE}")
+        print(f"   AI 决策模型: {AI_MODEL}")
+        print(f"   AI 决策间隔: {AI_DECISION_INTERVAL_SECONDS} 秒")
         print(f"   轮询间隔: {PAPER_POLL_INTERVAL_SECONDS} 秒")
 
         while True:
@@ -2016,7 +2204,7 @@ async def main():
 
     if TRADING_MODE.startswith("paper"):
         print(f"🧪 当前模式: {TRADING_MODE}")
-        print("📘 使用日 K 方向 + 当日 BTC 15m 盘口 纸上交易策略")
+        print("📘 使用 LLM 每 3 分钟决策 + 当日 BTC 15m 盘口 纸上交易策略")
         paper_bot = ContinuousPaperTradingBot()
         await paper_bot.run()
         return
