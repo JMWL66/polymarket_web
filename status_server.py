@@ -75,7 +75,11 @@ def load_env():
         "AI_DOWN_THRESHOLD",
         "AI_ENABLED",
         "AI_MODEL",
+        "AI_BASE_URL",
+        "AI_PROVIDER",
         "AI_DECISION_INTERVAL_SECONDS",
+        "MINIMAX_API_KEY",
+        "AI_ENABLED",
     }
     for key in override_keys:
         if key in os.environ:
@@ -609,6 +613,11 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 data = data_api_get(f"/trades?user={wallet}&limit=20")
                 send_json(self, data)
 
+        # === AI 决策历史 ===
+        elif path == '/api/ai-decisions':
+            state = load_paper_state() or {}
+            send_json(self, state.get("ai_history", []))
+
         # === 挂单 (Data API，公开) ===
         elif path == '/api/orders':
             env = load_env()
@@ -669,6 +678,11 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "daily_change_percent": signal.get("change_percent"),
                 "signal_reason": signal.get("reason"),
                 "strategy_name": report.get("strategy"),
+                "ai_enabled": env.get("AI_ENABLED", "true"),
+                "ai_model": signal.get("ai_model") or env.get("AI_MODEL", "gpt-4o-mini"),
+                "ai_source": signal.get("ai_source"),
+                "ai_decision_id": signal.get("decision_id"),
+                "ai_decision_interval_seconds": signal.get("decision_interval_seconds") or env.get("AI_DECISION_INTERVAL_SECONDS", "180"),
                 "exit_rule": f"best bid 浮盈 > ${env.get('PAPER_TAKE_PROFIT_USD', '0.12')} 提前卖出，否则到期离场",
                 "trading_enabled": control.get("trading_enabled", True),
             }

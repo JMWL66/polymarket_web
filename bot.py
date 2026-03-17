@@ -161,7 +161,7 @@ AI_ENABLED = os.getenv("AI_ENABLED", "true").lower() == "true"
 AI_DECISION_INTERVAL_SECONDS = int(os.getenv("AI_DECISION_INTERVAL_SECONDS", "180"))
 AI_PROVIDER = os.getenv("AI_PROVIDER", "openai_compatible")
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.openai.com/v1")
-AI_API_KEY = os.getenv("AI_API_KEY", "")
+AI_API_KEY = os.getenv("AI_API_KEY", "") or os.getenv("MINIMAX_API_KEY", "")
 AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
 AI_TEMPERATURE = float(os.getenv("AI_TEMPERATURE", "0.2"))
 AI_MAX_TOKENS = int(os.getenv("AI_MAX_TOKENS", "700"))
@@ -508,6 +508,7 @@ class AIDecisionEngine:
             ],
             "risk_flags": ["当前为规则回退，不是真实 LLM 输出"],
             "close_positions": False,
+            "source": "fallback",
         }
 
     def build_prompt(self, payload: dict) -> tuple[str, str]:
@@ -557,6 +558,7 @@ class AIDecisionEngine:
             "key_factors": [str(x)[:220] for x in (parsed.get("key_factors") or [])[:6]],
             "risk_flags": [str(x)[:220] for x in (parsed.get("risk_flags") or [])[:6]],
             "close_positions": bool(parsed.get("close_positions", str(parsed.get("action", "")).upper() == "SELL")),
+            "source": "llm",
         }
 
 
@@ -1158,6 +1160,7 @@ class ContinuousPaperTradingBot:
         state.setdefault("orders", [])
         state.setdefault("trades", [])
         state.setdefault("closed_markets", [])
+        state.setdefault("ai_history", [])
         state.setdefault(
             "stats",
             {
@@ -1186,6 +1189,7 @@ class ContinuousPaperTradingBot:
             "orders": [],
             "trades": [],
             "closed_markets": [],
+            "ai_history": [],
             "stats": {
                 "total_trades": 0,
                 "winning_trades": 0,
@@ -1208,6 +1212,107 @@ class ContinuousPaperTradingBot:
             "market": {},
             "last_signal": {},
         }
+
+    def build_decision_id(self, now_utc: datetime) -> str:
+        return f"AI-{now_utc.strftime('%m%d-%H%M%S')}"
+
+    def build_ai_candidate_digest(self, candidates: list) -> list:
+        digest = []
+        for item in (candidates or [])[:4]:
+            digest.append(
+                {
+                    "question": item.get("question"),
+                    "slug": item.get("slug"),
+                    "minutes_to_expiry": item.get("minutes_to_expiry"),
+                    "accepting_orders": item.get("accepting_orders"),
+                    "up": item.get("UP") or {},
+                    "down": item.get("DOWN") or {},
+                }
+            )
+        return digest
+
+    def upsert_ai_history_entry(self, signal: Optional[dict], decision: str, reason: str, focus_market: Optional[dict] = None):
+        if not signal:
+            return
+        decision_id = signal.get("decision_id")
+        if not decision_id:
+            return
+
+        history = self.state.setdefault("ai_history", [])
+        entry = None
+        for item in history:
+            if item.get("decision_id") == decision_id:
+                entry = item
+                break
+
+        if entry is None:
+            entry = {
+                "decision_id": decision_id,
+                "generated_at": signal.get("generated_at"),
+                "linked_trades": [],
+            }
+            history.insert(0, entry)
+
+        entry.update(
+            {
+                "generated_at": signal.get("generated_at"),
+                "prediction": signal.get("prediction"),
+                "action": signal.get("action"),
+                "decision": decision,
+                "confidence": signal.get("ai_confidence"),
+                "model": signal.get("ai_model"),
+                "source": signal.get("ai_source"),
+                "reasoning": signal.get("reason"),
+                "thought_markdown": signal.get("ai_thought_markdown"),
+                "key_factors": signal.get("ai_key_factors", []),
+                "risk_flags": signal.get("ai_risk_flags", []),
+                "candidate_markets": signal.get("ai_candidate_markets", []),
+                "execution_summary": reason,
+                "focus_market": (focus_market or {}).get("question"),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        entry["linked_trades"] = [
+            {
+                "trade_id": trade.get("id"),
+                "created_at": trade.get("created_at"),
+                "side": trade.get("side"),
+                "outcome": trade.get("outcome"),
+                "price": trade.get("price"),
+                "status": trade.get("status"),
+                "market": trade.get("market"),
+                "realized_profit": trade.get("realized_profit"),
+                "amount_display": trade.get("amount_display"),
+            }
+            for trade in self.state.get("trades", [])
+            if trade.get("ai_decision_id") == decision_id
+        ][:12]
+        self.state["ai_history"] = history[:80]
+
+    def attach_trade_to_ai_history(self, decision_id: Optional[str], trade: dict):
+        if not decision_id:
+            return
+        history = self.state.setdefault("ai_history", [])
+        for entry in history:
+            if entry.get("decision_id") != decision_id:
+                continue
+            linked = entry.setdefault("linked_trades", [])
+            linked.insert(
+                0,
+                {
+                    "trade_id": trade.get("id"),
+                    "created_at": trade.get("created_at"),
+                    "side": trade.get("side"),
+                    "outcome": trade.get("outcome"),
+                    "price": trade.get("price"),
+                    "status": trade.get("status"),
+                    "market": trade.get("market"),
+                    "realized_profit": trade.get("realized_profit"),
+                    "amount_display": trade.get("amount_display"),
+                },
+            )
+            entry["linked_trades"] = linked[:12]
+            return
 
     def get_daily_open(self) -> float:
         url = "https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1"
@@ -1338,6 +1443,7 @@ class ContinuousPaperTradingBot:
         ])
 
         signal = {
+            "decision_id": self.build_decision_id(now_utc),
             "generated_at": now_utc.isoformat(),
             "prediction": prediction,
             "action": action,
@@ -1351,6 +1457,8 @@ class ContinuousPaperTradingBot:
             "ai_risk_flags": ai_result.get("risk_flags", []),
             "ai_thought_markdown": thought_markdown,
             "ai_model": AI_MODEL,
+            "ai_source": ai_result.get("source", "llm"),
+            "ai_candidate_markets": self.build_ai_candidate_digest(payload.get("candidate_markets", [])),
             "close_positions": bool(ai_result.get("close_positions", False)),
             "decision_interval_seconds": AI_DECISION_INTERVAL_SECONDS,
         }
@@ -1606,6 +1714,7 @@ class ContinuousPaperTradingBot:
         self.state["orders"] = [self.build_order_view(position) for position in positions]
         self.state["trades"] = self.state["trades"][:100]
         self.state["closed_markets"] = self.state["closed_markets"][-80:]
+        self.state["ai_history"] = self.state.get("ai_history", [])[:80]
 
         reserved_balance = round(sum(position.get("current_value", 0.0) for position in positions), 4)
         unrealized_pnl = round(sum(position.get("unrealized_profit", 0.0) for position in positions), 4)
@@ -1752,6 +1861,8 @@ class ContinuousPaperTradingBot:
                 "ai_action": signal.get("action") if signal else None,
                 "ai_confidence": signal.get("ai_confidence") if signal else None,
                 "ai_model": signal.get("ai_model") if signal else AI_MODEL,
+                "ai_source": signal.get("ai_source") if signal else None,
+                "ai_decision_id": signal.get("decision_id") if signal else None,
                 "ai_thought_markdown": signal.get("ai_thought_markdown") if signal else None,
                 "ai_key_factors": signal.get("ai_key_factors") if signal else [],
                 "ai_risk_flags": signal.get("ai_risk_flags") if signal else [],
@@ -1767,6 +1878,7 @@ class ContinuousPaperTradingBot:
         )
 
     def persist(self, reason: str, signal: Optional[dict], focus_market: Optional[dict], decision: str, error: Optional[str] = None, trading_enabled: Optional[bool] = None):
+        self.upsert_ai_history_entry(signal, decision, reason, focus_market=focus_market)
         self.sync_summary(reason, signal, focus_market)
         save_json_file(PAPER_STATE_FILE, self.state)
         self.write_live_report()
@@ -1813,36 +1925,43 @@ class ContinuousPaperTradingBot:
             "status": "OPEN",
             "prediction": signal["prediction"],
             "entry_reason": signal["reason"],
+            "ai_decision_id": signal.get("decision_id"),
+            "ai_confidence": signal.get("ai_confidence"),
+            "ai_reasoning": signal.get("reason"),
         }
 
         self.state["cash_balance"] = round(self.state["cash_balance"] - stake, 4)
         self.state["positions"].append(position)
-        self.state["trades"].insert(
-            0,
-            {
-                "id": f"{position['id']}-entry",
-                "created_at": now_utc.isoformat(),
-                "side": "BUY",
-                "outcome": outcome,
-                "amount": f"${stake:.2f} / {shares:.4f} shares",
-                "amount_display": f"${stake:.2f}",
-                "size": f"{shares:.4f}",
-                "price": round(entry_price, 4),
-                "status": "OPENED",
-                "market": question,
-                "note": (
-                    f"{signal['reason']}，选择 {outcome}，入场 ask {entry_price:.3f} / "
-                    f"bid {bid_price:.3f} / spread {safe_float(quote.get('spread'), 0.0):.3f}"
-                ),
-                "market_slug": market_slug,
-            },
-        )
+        trade = {
+            "id": f"{position['id']}-entry",
+            "created_at": now_utc.isoformat(),
+            "side": "BUY",
+            "operation": "OPEN",
+            "outcome": outcome,
+            "amount": f"${stake:.2f} / {shares:.4f} shares",
+            "amount_display": f"${stake:.2f}",
+            "size": f"{shares:.4f}",
+            "price": round(entry_price, 4),
+            "status": "OPENED",
+            "market": question,
+            "note": (
+                f"{signal['reason']}，选择 {outcome}，入场 ask {entry_price:.3f} / "
+                f"bid {bid_price:.3f} / spread {safe_float(quote.get('spread'), 0.0):.3f}"
+            ),
+            "market_slug": market_slug,
+            "ai_decision_id": signal.get("decision_id"),
+            "ai_action": signal.get("action"),
+            "ai_confidence": signal.get("ai_confidence"),
+            "ai_reasoning": signal.get("reason"),
+        }
+        self.state["trades"].insert(0, trade)
+        self.attach_trade_to_ai_history(signal.get("decision_id"), trade)
 
         message = f"买入 {question} · {outcome} @ ask {entry_price:.3f}，投入 ${stake:.2f}"
         print(f"🟢 {message}")
         return message
 
-    def close_position(self, position: dict, exit_price: float, exit_reason: str, now_utc: datetime) -> str:
+    def close_position(self, position: dict, exit_price: float, exit_reason: str, now_utc: datetime, signal: Optional[dict] = None) -> str:
         proceeds = round(position["shares"] * exit_price, 4)
         profit = round(proceeds - position["stake"], 4)
         self.state["cash_balance"] = round(self.state["cash_balance"] + proceeds, 4)
@@ -1856,23 +1975,29 @@ class ContinuousPaperTradingBot:
         else:
             self.state["stats"]["losing_trades"] += 1
 
-        self.state["trades"].insert(
-            0,
-            {
-                "id": f"{position['id']}-exit",
-                "created_at": now_utc.isoformat(),
-                "side": "SELL",
-                "outcome": position["outcome"],
-                "amount": f"${proceeds:.2f}",
-                "amount_display": f"${proceeds:.2f}",
-                "size": f"{position['shares']:.4f}",
-                "price": round(exit_price, 4),
-                "status": exit_reason,
-                "market": position["market"],
-                "note": f"{exit_reason}，实现盈亏 {profit:+.4f} USDC",
-                "market_slug": position["market_slug"],
-            },
-        )
+        decision_id = (signal or {}).get("decision_id") or position.get("ai_decision_id")
+        trade = {
+            "id": f"{position['id']}-exit",
+            "created_at": now_utc.isoformat(),
+            "side": "SELL",
+            "operation": "CLOSE",
+            "outcome": position["outcome"],
+            "amount": f"${proceeds:.2f}",
+            "amount_display": f"${proceeds:.2f}",
+            "size": f"{position['shares']:.4f}",
+            "price": round(exit_price, 4),
+            "status": exit_reason,
+            "market": position["market"],
+            "note": f"{exit_reason}，实现盈亏 {profit:+.4f} USDC",
+            "market_slug": position["market_slug"],
+            "realized_profit": profit,
+            "ai_decision_id": decision_id,
+            "ai_action": (signal or {}).get("action"),
+            "ai_confidence": (signal or {}).get("ai_confidence"),
+            "ai_reasoning": (signal or {}).get("reason") or position.get("ai_reasoning"),
+        }
+        self.state["trades"].insert(0, trade)
+        self.attach_trade_to_ai_history(decision_id, trade)
 
         result = f"卖出 {position['market']} · {position['outcome']} @ {exit_price:.3f}，盈亏 {profit:+.4f} USDC"
         print(f"🔴 {result}")
@@ -1955,7 +2080,7 @@ class ContinuousPaperTradingBot:
                 if exit_price is None:
                     exit_price = position["entry_price"]
                 exit_price = round(exit_price, 4)
-                messages.append(self.close_position(position, exit_price, close_reason, now_utc))
+                messages.append(self.close_position(position, exit_price, close_reason, now_utc, signal=signal))
             else:
                 updated_positions.append(position)
 
