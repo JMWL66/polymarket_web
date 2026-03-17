@@ -12,6 +12,7 @@ import asyncio
 import calendar
 import json
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -483,6 +484,31 @@ class AIDecisionEngine:
         self.temperature = AI_TEMPERATURE
         self.max_tokens = AI_MAX_TOKENS
 
+    def parse_json_content(self, content: str) -> dict:
+        raw = (content or "").strip()
+        if not raw:
+            return {}
+
+        think_stripped = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+        candidates = [think_stripped, raw]
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                return json.loads(candidate)
+            except Exception:
+                pass
+
+            match = re.search(r"\{.*\}", candidate, flags=re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(0))
+                except Exception:
+                    pass
+
+        raise ValueError(f"模型输出不是有效 JSON: {raw[:300]}")
+
     def build_rule_fallback(self, payload: dict, fallback_reason: str) -> dict:
         btc = payload.get("btc", {})
         daily_open = safe_float(payload.get("daily_open"), 0.0) or 0.0
@@ -549,7 +575,7 @@ class AIDecisionEngine:
         resp.raise_for_status()
         data = resp.json()
         content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}").strip()
-        parsed = json.loads(content)
+        parsed = self.parse_json_content(content)
         return {
             "prediction": str(parsed.get("prediction", "HOLD")).upper(),
             "action": str(parsed.get("action", "HOLD")).upper(),
