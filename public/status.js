@@ -861,13 +861,19 @@ function renderTrades(trades) {
             }
         }
 
+        const noteId = `trade-note-${escapeHtml(String(firstValue(t.id, time, Math.random())).replace(/[^a-zA-Z0-9_-]/g, '-'))}`;
         const detailParts = [];
         if (decisionId) {
             detailParts.push(`<div class="trade-decision-link"><span class="tag tag-ok">${escapeHtml(decisionId)}</span><span>对应的 AI 决策记录</span></div>`);
         }
         detailParts.push(`<div class="trade-market">${escapeHtml(market)}</div>`);
         if (note) {
-            detailParts.push(`<div class="trade-note">${escapeHtml(note)}</div>`);
+            detailParts.push(`
+                <details class="trade-note-wrap">
+                    <summary class="trade-note-summary">查看说明</summary>
+                    <div class="trade-note" id="${noteId}">${escapeHtml(note)}</div>
+                </details>
+            `);
         }
 
         return `<tr>
@@ -877,7 +883,7 @@ function renderTrades(trades) {
             <td>${escapeHtml(amount)}</td>
             <td>${price != null ? price.toFixed(4) : '--'}</td>
             <td><div class="trade-result">${resultTag}${resultValue}</div></td>
-            <td><div class="trade-detail">${detailParts.join('')}</div></td>
+            <td><div class="trade-detail trade-detail-compact">${detailParts.join('')}</div></td>
         </tr>`;
     }).join('');
 
