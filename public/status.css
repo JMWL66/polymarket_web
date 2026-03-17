@@ -853,6 +853,15 @@ body::after {
     gap: 5px;
 }
 
+.trade-decision-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 0.7rem;
+}
+
 .trade-market {
     color: var(--text);
     font-family: "Space Grotesk", sans-serif;
@@ -994,6 +1003,98 @@ body::after {
     margin-top: 5px;
 }
 
+.ai-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.ai-history-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.ai-history-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.ai-history-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.ai-history-meta {
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    text-align: right;
+}
+
+.ai-history-summary {
+    color: var(--text);
+    font-size: 0.8rem;
+    line-height: 1.65;
+}
+
+.ai-history-execution {
+    padding: 8px 10px;
+    border-radius: 12px;
+    color: var(--amber);
+    background: rgba(240, 185, 11, 0.08);
+    border: 1px solid rgba(240, 185, 11, 0.12);
+    font-size: 0.74rem;
+    line-height: 1.5;
+}
+
+.ai-history-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ai-history-section {
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ai-history-section-title {
+    margin-bottom: 8px;
+    color: var(--amber);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.ai-history-list-items {
+    margin-left: 18px;
+    color: var(--text-muted);
+    font-size: 0.73rem;
+    line-height: 1.55;
+}
+
+.ai-history-list-items li + li {
+    margin-top: 6px;
+}
+
+.ai-history-trades li {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
 .decision-main {
     padding: 16px;
     border-radius: 16px;
@@ -1003,6 +1104,56 @@ body::after {
     display: flex;
     flex-direction: column;
     justify-content: center;
+}
+
+.openclaw-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+}
+
+.openclaw-card.is-buy {
+    border-color: rgba(22, 199, 132, 0.34);
+    box-shadow: 0 0 20px rgba(22, 199, 132, 0.1);
+}
+
+.openclaw-card.is-sell {
+    border-color: rgba(255, 91, 119, 0.34);
+    box-shadow: 0 0 20px rgba(255, 91, 119, 0.1);
+}
+
+.openclaw-card.is-hold {
+    border-color: rgba(240, 185, 11, 0.28);
+    box-shadow: 0 0 20px rgba(240, 185, 11, 0.08);
+}
+
+.openclaw-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.openclaw-label {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.openclaw-value {
+    color: var(--text);
+    font-size: 0.86rem;
+}
+
+.openclaw-reason {
+    color: var(--text-muted);
+    line-height: 1.65;
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .decision-action {
@@ -1438,6 +1589,10 @@ body::after {
         gap: 10px;
     }
 
+    .ai-history-card {
+        padding: 10px 12px;
+    }
+
     .thought-summary {
         font-size: 0.78rem;
         line-height: 1.55;
@@ -1458,6 +1613,21 @@ body::after {
 
     .thought-list {
         font-size: 0.7rem;
+    }
+
+    .ai-history-columns {
+        grid-template-columns: 1fr;
+    }
+
+    .ai-history-summary,
+    .ai-history-execution,
+    .ai-history-list-items {
+        font-size: 0.7rem;
+    }
+
+    .ai-history-trades li {
+        flex-direction: column;
+        gap: 4px;
     }
 
     .decision-main {

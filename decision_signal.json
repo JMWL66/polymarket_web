@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-03-17T01:07:00Z",
+  "action": "HOLD",
+  "prediction": "HOLD",
+  "confidence": 0.5,
+  "reason": "等待 OpenClaw 首次每 3 分钟决策写入。当前为占位信号。",
+  "source": "openclaw-bootstrap"
+}

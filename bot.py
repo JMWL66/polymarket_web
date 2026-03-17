@@ -27,6 +27,7 @@ STATUS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_stat
 PAPER_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_trade_state.json")
 REPORT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_trade_report.md")
 CONTROL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trading_control.json")
+DECISION_SIGNAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "decision_signal.json")
 
 def load_json_file(path, default):
     try:
@@ -75,6 +76,38 @@ def safe_float(value, default=None):
         return float(value)
     except Exception:
         return default
+
+
+def load_openclaw_signal():
+    signal = load_json_file(DECISION_SIGNAL_FILE, {})
+    if not isinstance(signal, dict):
+        return None
+
+    action = str(signal.get("action", "")).upper().strip()
+    if action not in {"BUY", "SELL", "HOLD"}:
+        return None
+
+    prediction = str(signal.get("prediction") or signal.get("direction") or action).upper().strip()
+    if prediction not in {"UP", "DOWN", "HOLD"}:
+        prediction = "UP" if action == "BUY" else "DOWN" if action == "SELL" else "HOLD"
+
+    return {
+        "decision_id": signal.get("decision_id") or signal.get("id") or f"OPENCLAW-{int(time.time())}",
+        "generated_at": signal.get("timestamp") or signal.get("generated_at") or datetime.now(timezone.utc).isoformat(),
+        "prediction": prediction,
+        "action": action,
+        "reason": str(signal.get("reason") or signal.get("reasoning") or signal.get("summary") or "OpenClaw 外部决策信号").strip(),
+        "ai_confidence": round(safe_float(signal.get("confidence"), 0.5) or 0.5, 4),
+        "ai_model": str(signal.get("model") or signal.get("agent") or "OpenClaw Decision"),
+        "ai_source": str(signal.get("source") or "openclaw-cron"),
+        "ai_key_factors": [str(x)[:220] for x in (signal.get("key_factors") or [])[:6]],
+        "ai_risk_flags": [str(x)[:220] for x in (signal.get("risk_flags") or [])[:6]],
+        "ai_thought_markdown": str(signal.get("thought_markdown") or signal.get("reason") or signal.get("reasoning") or "OpenClaw 外部决策信号"),
+        "close_positions": bool(signal.get("close_positions", action == "SELL")),
+        "decision_interval_seconds": int(safe_float(signal.get("decision_interval_seconds"), AI_DECISION_INTERVAL_SECONDS) or AI_DECISION_INTERVAL_SECONDS),
+        "external_signal": True,
+        "raw_signal": signal,
+    }
 
 
 def iso_to_utc_dt(value: str) -> datetime:
@@ -1392,6 +1425,28 @@ class ContinuousPaperTradingBot:
         return summary
 
     def get_ai_signal(self, snapshots: list, now_utc: datetime, market_cache: dict) -> dict:
+        external_signal = load_openclaw_signal()
+        if external_signal:
+            btc_data = BTCDataprovider.get_price_with_change() or {}
+            try:
+                daily_open = self.get_daily_open()
+            except Exception:
+                daily_open = external_signal.get("daily_open") or 0.0
+            current_price = safe_float((btc_data or {}).get("price"), external_signal.get("current_price"))
+            change_percent = None
+            if current_price and daily_open:
+                change_percent = round(((current_price - daily_open) / daily_open * 100), 4)
+            external_signal.update({
+                "daily_open": round(safe_float(daily_open, 0.0) or 0.0, 2) if daily_open else None,
+                "current_price": round(safe_float(current_price, 0.0) or 0.0, 2) if current_price else None,
+                "change_percent": change_percent,
+                "btc_data": btc_data,
+                "ai_candidate_markets": self.build_ai_candidate_digest(self.summarize_market_candidates(snapshots, now_utc, market_cache)),
+                "reason": f"OpenClaw 信号优先：{external_signal.get('reason', '无说明')}",
+            })
+            self.last_ai_signal = external_signal
+            return external_signal
+
         cached_signal = self.last_ai_signal or self.state.get("last_signal") or {}
         cached_at = cached_signal.get("generated_at")
         if cached_at:
@@ -1883,13 +1938,14 @@ class ContinuousPaperTradingBot:
                 "open_positions": summary.get("open_positions"),
                 "cash_balance": summary.get("cash_balance"),
                 "reserved_balance": summary.get("reserved_balance"),
-                "strategy_name": "LLM 决策 + 当日BTC 15分钟盘口 + Order Book筛选",
+                "strategy_name": "OpenClaw/LLM 决策 + 当日BTC 15分钟盘口 + Order Book筛选",
                 "ai_action": signal.get("action") if signal else None,
                 "ai_confidence": signal.get("ai_confidence") if signal else None,
                 "ai_model": signal.get("ai_model") if signal else AI_MODEL,
                 "ai_source": signal.get("ai_source") if signal else None,
                 "ai_decision_id": signal.get("decision_id") if signal else None,
                 "ai_thought_markdown": signal.get("ai_thought_markdown") if signal else None,
+                "external_signal": bool(signal.get("external_signal")) if signal else False,
                 "ai_key_factors": signal.get("ai_key_factors") if signal else [],
                 "ai_risk_flags": signal.get("ai_risk_flags") if signal else [],
                 "ai_decision_interval_seconds": signal.get("decision_interval_seconds") if signal else AI_DECISION_INTERVAL_SECONDS,
