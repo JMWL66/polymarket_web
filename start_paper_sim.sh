@@ -37,7 +37,37 @@ stop_pid_file "$BOT_PID_FILE"
 stop_pid_file "$SERVER_PID_FILE"
 stop_port_listener 8889
 
-rm -f "$ROOT_DIR/bot_status.json" "$ROOT_DIR/paper_trade_state.json" "$ROOT_DIR/paper_trade_report.md"
+archive_previous_run() {
+    local archive_root="$ROOT_DIR/history"
+    local stamp
+    stamp="$(date '+%Y-%m-%d_%H-%M-%S')"
+    local archive_dir="$archive_root/$stamp"
+    local has_files=0
+
+    mkdir -p "$archive_dir"
+
+    for file in \
+        "$ROOT_DIR/bot_status.json" \
+        "$ROOT_DIR/paper_trade_state.json" \
+        "$ROOT_DIR/paper_trade_report.md" \
+        "$ROOT_DIR/decision_signal.json" \
+        "$BOT_LOG" \
+        "$SERVER_LOG"
+    do
+        if [[ -f "$file" ]]; then
+            cp "$file" "$archive_dir/$(basename "$file")"
+            has_files=1
+        fi
+    done
+
+    if [[ "$has_files" -eq 1 ]]; then
+        echo "已归档上一轮记录到: $archive_dir"
+    else
+        rmdir "$archive_dir" 2>/dev/null || true
+    fi
+}
+
+archive_previous_run
 
 export TRADING_MODE="${TRADING_MODE:-paper_live}"
 export PAPER_START_BALANCE="${PAPER_START_BALANCE:-100}"
@@ -51,12 +81,14 @@ export PAPER_MIN_TOP_BOOK_SIZE="${PAPER_MIN_TOP_BOOK_SIZE:-25}"
 export PAPER_MIN_MINUTES_TO_EXPIRY="${PAPER_MIN_MINUTES_TO_EXPIRY:-3}"
 export PAPER_TAKE_PROFIT_USD="${PAPER_TAKE_PROFIT_USD:-0.12}"
 export PAPER_POLL_INTERVAL_SECONDS="${PAPER_POLL_INTERVAL_SECONDS:-15}"
-export PAPER_MAX_OPEN_POSITIONS="${PAPER_MAX_OPEN_POSITIONS:-4}"
-export PAPER_MAX_NEW_POSITIONS_PER_CYCLE="${PAPER_MAX_NEW_POSITIONS_PER_CYCLE:-2}"
+export PAPER_MAX_OPEN_POSITIONS="${PAPER_MAX_OPEN_POSITIONS:-1}"
+export PAPER_MAX_NEW_POSITIONS_PER_CYCLE="${PAPER_MAX_NEW_POSITIONS_PER_CYCLE:-1}"
 export PAPER_MARKET_INTERVAL_MINUTES="${PAPER_MARKET_INTERVAL_MINUTES:-15}"
 export PAPER_FORWARD_SLOT_COUNT="${PAPER_FORWARD_SLOT_COUNT:-8}"
 export PAPER_WALLET_LABEL="${PAPER_WALLET_LABEL:-LOCAL-SIM-100U}"
 export STOP_LOSS_ENABLED="${STOP_LOSS_ENABLED:-false}"
+export AI_ENABLED="${AI_ENABLED:-true}"
+export AI_DECISION_INTERVAL_SECONDS="${AI_DECISION_INTERVAL_SECONDS:-180}"
 
 cd "$ROOT_DIR"
 
