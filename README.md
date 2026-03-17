@@ -50,13 +50,15 @@ polymarket_web/
 ├── requirements.txt            # Python 依赖
 ├── .env                        # 本地配置（不要上传真实密钥）
 ├── .env.example                # 配置模板
-├── decision_signal.json        # OpenClaw / 外部信号源
-├── bot_status.json             # 当前运行状态缓存
-├── paper_trade_state.json      # 当前模拟账户状态、持仓、交易流水
-├── paper_trade_report.md       # 当前模拟报告
-├── history/                    # 每次重启前自动归档上一轮数据
+├── docs/
+│   └── PROJECT_TODO.md         # 早期待办与整理说明
+├── decision_signal.json        # OpenClaw / 外部信号源（本地运行文件，不建议纳入版本管理）
+├── bot_status.json             # 当前运行状态缓存（本地运行文件）
+├── paper_trade_state.json      # 当前模拟账户状态、持仓、交易流水（本地运行文件）
+├── paper_trade_report.md       # 当前模拟报告（本地运行文件）
+├── history/                    # 每次重启前自动归档上一轮数据（本地运行目录）
 │   └── YYYY-MM-DD_HH-MM-SS/
-├── .runtime/                   # 当前运行日志、PID 文件
+├── .runtime/                   # 当前运行日志、PID 文件（本地运行目录）
 └── public/
     ├── status.html             # 面板页面
     ├── status.css              # 面板样式
