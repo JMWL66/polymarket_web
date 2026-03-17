@@ -2,6 +2,10 @@ node_modules/
 .env
 .DS_Store
 bot_status.json
+decision_signal.json
+paper_trade_state.json
+paper_trade_report.md
+history/
 __pycache__/
 *.pyc
 bot.log
