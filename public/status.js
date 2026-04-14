@@ -1047,3 +1047,96 @@ function renderCapitalPanel(data) {
         setText('session-duration', `${String(diffHrs).padStart(2, '0')}h ${String(diffMins).padStart(2, '0')}m`);
     }
 }
+
+/** ========= 设置中心逻辑 ========= **/
+const settingsModal = document.getElementById('settings-modal');
+const openSettingsBtn = document.getElementById('open-settings');
+const closeSettingsBtn = document.getElementById('close-settings');
+const cancelSettingsBtn = document.getElementById('cancel-settings');
+const saveSettingsBtn = document.getElementById('save-settings');
+
+function initSettings() {
+    if (!openSettingsBtn) return;
+
+    openSettingsBtn.addEventListener('click', () => {
+        syncSettingsToUI();
+        settingsModal.classList.add('active');
+    });
+
+    const closeActions = [closeSettingsBtn, cancelSettingsBtn];
+    closeActions.forEach(btn => {
+        if (btn) btn.addEventListener('click', () => settingsModal.classList.remove('active'));
+    });
+
+    // 模式切换点击处理
+    document.querySelectorAll('.mode-selector .mode-item').forEach(item => {
+        item.addEventListener('click', () => {
+            document.querySelectorAll('.mode-selector .mode-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+        });
+    });
+
+    if (saveSettingsBtn) {
+        saveSettingsBtn.addEventListener('click', saveSystemSettings);
+    }
+}
+
+function syncSettingsToUI() {
+    const cfg = dashboardState.config;
+    if (!cfg) return;
+
+    // 同步模式
+    const mode = cfg.trading_mode || 'paper_live';
+    document.querySelectorAll('.mode-selector .mode-item').forEach(item => {
+        if (item.dataset.mode === mode) {
+            item.classList.add('active');
+        } else {
+            item.classList.remove('active');
+        }
+    });
+
+    // 同步参数
+    document.getElementById('cfg-input-api-key').value = cfg.POLYMARKET_API_KEY || '';
+    document.getElementById('cfg-input-bet').value = cfg.paper_bet_amount || cfg.bet_amount || 5;
+    document.getElementById('cfg-input-tp').value = cfg.tp_threshold || 1.10;
+}
+
+async function saveSystemSettings() {
+    saveSettingsBtn.disabled = true;
+    saveSettingsBtn.textContent = '保存中...';
+
+    const selectedMode = document.querySelector('.mode-selector .mode-item.active').dataset.mode;
+    const updatePayload = {
+        trading_mode: selectedMode,
+        POLYMARKET_API_KEY: document.getElementById('cfg-input-api-key').value,
+        POLYMARKET_API_SECRET: document.getElementById('cfg-input-api-secret').value,
+        POLYMARKET_API_PASSPHRASE: document.getElementById('cfg-input-api-pass').value,
+        bet_amount: parseFloat(document.getElementById('cfg-input-bet').value),
+        paper_bet_amount: parseFloat(document.getElementById('cfg-input-bet').value),
+        tp_threshold: parseFloat(document.getElementById('cfg-input-tp').value)
+    };
+
+    try {
+        const resp = await fetch('/api/update-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatePayload)
+        });
+
+        if (resp.ok) {
+            settingsModal.classList.remove('active');
+            refreshAll();
+        } else {
+            alert('配置更新失败');
+        }
+    } catch (err) {
+        console.error('Save error:', err);
+        alert('网络请求异常');
+    } finally {
+        saveSettingsBtn.disabled = false;
+        saveSettingsBtn.textContent = '保存并应用';
+    }
+}
+
+// 在入口处初始化
+initSettings();

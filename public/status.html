@@ -42,6 +42,7 @@
                 <span class="time-chip-label">Last Sync</span>
                 <span class="update-time" id="update-time">--:--:--</span>
             </div>
+            <button id="open-settings" class="settings-btn" title="系统设置">⚙️</button>
             <button class="refresh-btn" id="refresh-btn" onclick="refreshAll()" title="刷新">⟳</button>
         </div>
     </header>
@@ -219,6 +220,58 @@
 
         </div>
     </main>
+
+    <!-- ========= 设置模态框 ========= -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>系统运行设置</h3>
+                <button class="close-modal" id="close-settings">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <label>运行模式控制</label>
+                    <div class="mode-selector">
+                        <div class="mode-item active" data-mode="paper_live">
+                            <span class="mode-title">模拟账户 (Paper)</span>
+                            <span class="mode-desc">使用虚拟资金测试策略</span>
+                        </div>
+                        <div class="mode-item" data-mode="live">
+                            <span class="mode-title">真实账户 (Live)</span>
+                            <span class="mode-desc">调用官方 SDK 执行真钱下单</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="setting-group">
+                    <label>API 凭证配置 (加密存储)</label>
+                    <div class="input-stack">
+                        <input type="text" id="cfg-input-api-key" placeholder="Polymarket API Key">
+                        <input type="password" id="cfg-input-api-secret" placeholder="Polymarket API Secret">
+                        <input type="password" id="cfg-input-api-pass" placeholder="API Passphrase">
+                    </div>
+                </div>
+
+                <div class="setting-group">
+                    <label>基础参数</label>
+                    <div class="input-grid">
+                        <div class="input-field">
+                            <span>单笔下单 ($)</span>
+                            <input type="number" id="cfg-input-bet" step="1">
+                        </div>
+                        <div class="input-field">
+                            <span>止盈点数</span>
+                            <input type="number" id="cfg-input-tp" step="0.01">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" id="cancel-settings">取消</button>
+                <button class="btn-save" id="save-settings">保存并应用</button>
+            </div>
+        </div>
+    </div>
 
     <script src="status.js?v=20260316p"></script>
 </body>
