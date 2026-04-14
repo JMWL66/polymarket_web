@@ -9,7 +9,6 @@ const dashboardState = {
     realBalance: null,
     config: null,
     aiHistory: [],
-    decisionSignal: null,
     positionCounts: { paper: 0, real: 0 },
     expandedPositionId: null,
 };
@@ -449,34 +448,9 @@ async function fetchBotStatus() {
             setText('ai-label', pred === 'UP' ? 'AI 判断现价高于今开' : pred === 'DOWN' ? 'AI 判断现价低于今开' : '等待信号');
         }
 
-        if (data.yes_price != null && data.no_price != null) {
-            const outcomes = Array.isArray(data.outcomes) ? data.outcomes : ['YES', 'NO'];
-            const firstLabel = (outcomes[0] || 'YES').toUpperCase();
-            const secondLabel = (outcomes[1] || 'NO').toUpperCase();
-            let targetLabel = firstLabel;
-            let targetPrice = Number(data.yes_price) * 100;
-            let reverseLabel = secondLabel;
-            let reversePrice = Number(data.no_price) * 100;
-
-            if (pred === 'DOWN') {
-                targetLabel = secondLabel;
-                targetPrice = Number(data.no_price) * 100;
-                reverseLabel = firstLabel;
-                reversePrice = Number(data.yes_price) * 100;
-            }
-
-            setOutcomeLabels(targetLabel, reverseLabel);
-            setText('yes-price', Math.round(targetPrice) + '¢');
-            setText('no-price', Math.round(reversePrice) + '¢');
-            setText('prob-yes', targetPrice.toFixed(1) + '% 目标方向');
-            setText('prob-no', reversePrice.toFixed(1) + '% 反向盘口');
-            setMarketDominance(targetPrice, reversePrice);
-        }
-
-        if (data.market) setText('market-name', data.market);
         if (data.last_update) setText('update-time', shortTime(data.last_update));
-        renderAiThoughts(data);
-        updateDecision(data.decision, data.error, data.decision_reason);
+        // renderAiThoughts/updateDecision 被移除
+        renderCapitalPanel(data);
     } catch (e) {
         setOffline();
     }
@@ -487,45 +461,6 @@ function setOffline() {
     setText('status-label', '无数据');
 }
 
-function renderAiThoughts(data) {
-    const card = document.getElementById('ai-thought-card');
-    const meta = document.getElementById('ai-thought-meta');
-    if (!card || !meta) return;
-
-    const confidence = firstNumber(data.ai_confidence);
-    const model = firstValue(data.ai_model, dashboardState.config && dashboardState.config.ai_model, '--');
-    const action = firstValue(data.ai_action, data.decision, 'HOLD');
-    const source = firstValue(data.ai_source, dashboardState.config && dashboardState.config.ai_source, 'llm');
-    const factors = Array.isArray(data.ai_key_factors) ? data.ai_key_factors : [];
-    const risks = Array.isArray(data.ai_risk_flags) ? data.ai_risk_flags : [];
-    const reasoning = firstValue(data.ai_thought_markdown, data.signal_reason, data.decision_reason, '等待 AI 输出...');
-    const intervalSeconds = firstNumber(data.ai_decision_interval_seconds, dashboardState.config && dashboardState.config.ai_decision_interval_seconds);
-    const decisionId = firstValue(data.ai_decision_id, dashboardState.config && dashboardState.config.ai_decision_id, '--');
-
-    meta.textContent = `${model} · ${source}${confidence != null ? ` · ${(confidence * 100).toFixed(0)}%` : ''}`;
-
-    const factorHtml = factors.length
-        ? factors.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
-        : '<li>暂无关键依据</li>';
-    const riskHtml = risks.length
-        ? risks.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
-        : '<li>暂无风险提示</li>';
-
-    card.innerHTML = `
-        <div class="thought-summary">${escapeHtml(reasoning)}</div>
-        <div class="thought-meta-line mono">决策编号：${escapeHtml(decisionId)} · 动作：${escapeHtml(action)} · 决策频率：${intervalSeconds != null ? intervalSeconds + ' 秒 / 次' : '--'} · 最近同步：${shortTime(data.last_update)}</div>
-        <div class="thought-sections">
-            <div class="thought-section">
-                <div class="thought-section-title">关键依据</div>
-                <ul class="thought-list">${factorHtml}</ul>
-            </div>
-            <div class="thought-section">
-                <div class="thought-section-title">风险提示</div>
-                <ul class="thought-list">${riskHtml}</ul>
-            </div>
-        </div>
-    `;
-}
 
 async function fetchAiHistory() {
     try {
@@ -551,7 +486,8 @@ function renderAiHistory() {
         return;
     }
 
-    list.innerHTML = entries.slice(0, 10).map((entry) => {
+    list.innerHTML = entries.slice(0, 15).map((entry, idx) => {
+        const isLatest = idx === 0;
         const decisionId = escapeHtml(firstValue(entry.decision_id, '--'));
         const action = escapeHtml(firstValue(entry.action, entry.decision, 'HOLD'));
         const prediction = escapeHtml(firstValue(entry.prediction, 'HOLD'));
@@ -561,6 +497,17 @@ function renderAiHistory() {
         const executionSummary = escapeHtml(firstValue(entry.execution_summary, '等待执行'));
         const linkedTrades = Array.isArray(entry.linked_trades) ? entry.linked_trades : [];
         const candidateMarkets = Array.isArray(entry.candidate_markets) ? entry.candidate_markets : [];
+
+        // 详细信息排版 (仅用于第一项)
+        const factors = Array.isArray(entry.key_factors) ? entry.key_factors : [];
+        const risks = Array.isArray(entry.risk_flags) ? entry.risk_flags : [];
+        
+        const factorHtml = factors.length
+            ? factors.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+            : '<li>暂无关键依据</li>';
+        const riskHtml = risks.length
+            ? risks.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+            : '<li>暂无风险提示</li>';
 
         const candidateHtml = candidateMarkets.length
             ? candidateMarkets.slice(0, 2).map((market) => {
@@ -582,114 +529,50 @@ function renderAiHistory() {
                     <strong class="${resultClass} mono">${resultText}</strong>
                 </li>`;
             }).join('')
-            : '<li>这一条 AI 决策目前还没有触发交易。</li>';
+            : '<li>无关联交易。</li>';
 
-        return `<div class="ai-history-card">
-            <div class="ai-history-head">
+        if (isLatest) {
+            return `<div class="ai-history-card is-latest">
+                <div class="ai-history-head">
+                    <div class="ai-history-title-row">
+                        <span class="tag tag-ok">NEWEST</span>
+                        <span class="tag tag-ok">${decisionId}</span>
+                        <span class="tag ${action === 'BUY' ? 'tag-buy' : action === 'SELL' ? 'tag-sell' : 'tag-ok'}">${action}</span>
+                    </div>
+                    <div class="ai-history-meta mono">${model}${confidence != null ? ` · ${(confidence * 100).toFixed(0)}%` : ''} · ${shortTime(firstValue(entry.generated_at))}</div>
+                </div>
+                <div class="ai-history-summary">${reasoning}</div>
+                <div class="thought-sections" style="margin-top: 12px;">
+                    <div class="thought-section">
+                        <div class="thought-section-title">关键依据</div>
+                        <ul class="thought-list">${factorHtml}</ul>
+                    </div>
+                    <div class="thought-section">
+                        <div class="thought-section-title">风险提示</div>
+                        <ul class="thought-list">${riskHtml}</ul>
+                    </div>
+                </div>
+                <div class="ai-history-execution" style="border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 10px; margin-top: 10px;">执行状态：${executionSummary}</div>
+                <div class="ai-history-columns" style="display: none;"></div> <!-- 详细模式下移除冗余栏目 -->
+            </div>`;
+        }
+
+        return `<div class="ai-history-card compact">
+            <div class="ai-history-head" style="margin-bottom: 0;">
                 <div class="ai-history-title-row">
-                    <span class="tag tag-ok">${decisionId}</span>
-                    <span class="tag ${action === 'BUY' ? 'tag-buy' : action === 'SELL' ? 'tag-sell' : 'tag-ok'}">${action}</span>
-                    <span class="tag ${prediction === 'UP' ? 'tag-buy' : prediction === 'DOWN' ? 'tag-sell' : 'tag-ok'}">${prediction}</span>
+                    <span class="tag tag-ok" style="font-size: 0.65rem; padding: 2px 6px;">${shortTime(firstValue(entry.generated_at))}</span>
+                    <span class="tag ${action === 'BUY' ? 'tag-buy' : action === 'SELL' ? 'tag-sell' : 'tag-ok'}" style="font-size: 0.65rem; padding: 2px 6px;">${action}</span>
+                    <span style="font-size: 0.75rem; color: var(--text-muted);">${decisionId}</span>
                 </div>
-                <div class="ai-history-meta mono">${model}${confidence != null ? ` · ${(confidence * 100).toFixed(0)}%` : ''} · ${shortTime(firstValue(entry.generated_at))}</div>
+                <div class="ai-history-meta mono" style="font-size: 0.65rem;">${executionSummary}</div>
             </div>
-            <div class="ai-history-summary">${reasoning}</div>
-            <div class="ai-history-execution">${executionSummary}</div>
-            <div class="ai-history-columns">
-                <div class="ai-history-section">
-                    <div class="ai-history-section-title">盘口依据</div>
-                    <ul class="ai-history-list-items">${candidateHtml}</ul>
-                </div>
-                <div class="ai-history-section">
-                    <div class="ai-history-section-title">对应交易</div>
-                    <ul class="ai-history-list-items ai-history-trades">${linkedHtml}</ul>
-                </div>
-            </div>
+            <div class="ai-history-summary" style="margin-top: 6px; font-size: 0.75rem; opacity: 0.8; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; height: auto;">${reasoning}</div>
         </div>`;
     }).join('');
 }
 
-function renderDecisionSignal() {
-    const card = document.getElementById('openclaw-card');
-    const meta = document.getElementById('openclaw-meta');
-    if (!card || !meta) return;
+/* ---- OpenClaw 同步逻辑已移除 ---- */
 
-    const signal = dashboardState.decisionSignal;
-    if (!signal) {
-        meta.textContent = '等待信号';
-        setText('openclaw-action', '--');
-        setText('openclaw-confidence', '--');
-        setText('openclaw-source', '--');
-        setText('openclaw-reason', '等待 OpenClaw 生成最新建议...');
-        card.classList.remove('is-buy', 'is-sell', 'is-hold');
-        return;
-    }
-
-    const action = String(firstValue(signal.action, 'HOLD')).toUpperCase();
-    const confidence = firstNumber(signal.confidence);
-    const source = firstValue(signal.source, 'openclaw-cron');
-    const ts = firstValue(signal.timestamp, signal.generated_at);
-    const reason = firstValue(signal.reason, signal.reasoning, '无说明');
-
-    meta.textContent = `${source} · ${shortTime(ts)}`;
-    setText('openclaw-action', action);
-    setText('openclaw-confidence', confidence == null ? '--' : `${(confidence * 100).toFixed(0)}%`);
-    setText('openclaw-source', source);
-    setText('openclaw-reason', reason);
-
-    card.classList.remove('is-buy', 'is-sell', 'is-hold');
-    card.classList.add(action === 'BUY' ? 'is-buy' : action === 'SELL' ? 'is-sell' : 'is-hold');
-}
-
-async function fetchDecisionSignal() {
-    try {
-        const resp = await fetch('/api/decision-signal?ts=' + Date.now(), { cache: 'no-store' });
-        const data = await resp.json();
-        dashboardState.decisionSignal = resp.ok && !data.error ? data : null;
-    } catch (e) {
-        dashboardState.decisionSignal = null;
-    }
-    renderDecisionSignal();
-}
-
-function updateDecision(decision, error, reason) {
-    const tabs = {
-        buy: document.getElementById('tab-buy'),
-        sell: document.getElementById('tab-sell'),
-        hold: document.getElementById('tab-hold'),
-    };
-    const actionEl = document.getElementById('decision-action');
-    const reasonEl = document.getElementById('decision-reason');
-
-    Object.values(tabs).forEach((t) => {
-        t.className = 'dec-tab';
-    });
-
-    if (error) {
-        tabs.hold.className = 'dec-tab active-sell';
-        actionEl.textContent = '系统错误';
-        actionEl.className = 'decision-action c-red';
-        reasonEl.textContent = error;
-        return;
-    }
-
-    if (decision === 'BUY') {
-        tabs.buy.className = 'dec-tab active-buy';
-        actionEl.textContent = '买入';
-        actionEl.className = 'decision-action c-green';
-        reasonEl.textContent = reason || '模型和赔率给出正向共振，适合进场。';
-    } else if (decision === 'SELL') {
-        tabs.sell.className = 'dec-tab active-sell';
-        actionEl.textContent = '卖出';
-        actionEl.className = 'decision-action c-red';
-        reasonEl.textContent = reason || '风险偏移，优先保护资金。';
-    } else {
-        tabs.hold.className = 'dec-tab active-hold';
-        actionEl.textContent = '观望';
-        actionEl.className = 'decision-action c-amber';
-        reasonEl.textContent = reason || '暂无足够优势，保持耐心。';
-    }
-}
 
 /* ---- 余额 ---- */
 async function fetchBalance() {
@@ -1100,7 +983,6 @@ async function refreshAll() {
         fetchRealBalance(),
         fetchTrades(),
         fetchAiHistory(),
-        fetchDecisionSignal(),
         fetchOrderBook(),
         fetchOrders(),
         fetchConfig(),
@@ -1116,7 +998,52 @@ window.refreshAll = refreshAll;
 
 renderAccountMode();
 renderTradingControl();
-renderDecisionSignal();
 fetchConfig();
 refreshAll();
 setInterval(refreshAll, 10000);
+
+function renderCapitalPanel(data) {
+    const cash = firstNumber(data.cash_balance, 0);
+    const reserved = firstNumber(data.reserved_balance, 0);
+    const total = cash + reserved;
+    
+    // 资产分配条
+    const reservedPct = total > 0 ? (reserved / total) * 100 : 0;
+    const cashPct = 100 - reservedPct;
+    
+    setText('asset-cash-val', formatUSD(cash));
+    setText('asset-reserved-val', formatUSD(reserved));
+    
+    const barCash = document.getElementById('bar-cash');
+    const barReserved = document.getElementById('bar-reserved');
+    if (barCash) barCash.style.width = cashPct + '%';
+    if (barReserved) barReserved.style.width = reservedPct + '%';
+    
+    // 绩效数据
+    const winRate = firstNumber(data.win_rate || (dashboardState.config && dashboardState.config.win_rate), 0);
+    const tradeCount = firstNumber(data.total_trades || data.trade_count || (dashboardState.config && dashboardState.config.trade_count), 0);
+    const roi = firstNumber(data.paper_roi_percent || (dashboardState.config && dashboardState.config.paper_roi_percent), 0);
+    const profit = firstNumber(data.paper_profit || (dashboardState.config && dashboardState.config.paper_profit), 0);
+    
+    setText('perf-win-rate', (winRate * 100).toFixed(1) + '%');
+    setText('perf-trade-count', tradeCount);
+    setText('perf-roi', (roi >= 0 ? '+' : '') + roi.toFixed(2) + '%');
+    setText('perf-profit-val', formatSignedUSD(profit));
+    
+    // 颜色标记
+    const winRateEl = document.getElementById('perf-win-rate');
+    if (winRateEl) {
+        winRateEl.className = `perf-val mono ${winRate >= 0.5 ? 'c-green' : winRate > 0 ? 'c-amber' : ''}`;
+    }
+
+    // 会话时长
+    const sessionStart = data.session_started_at || (dashboardState.config && dashboardState.config.paper_session_started_at);
+    if (sessionStart) {
+        const start = new Date(sessionStart);
+        const now = new Date();
+        const diffMs = now - start;
+        const diffHrs = Math.floor(diffMs / 3600000);
+        const diffMins = Math.floor((diffMs % 3600000) / 60000);
+        setText('session-duration', `${String(diffHrs).padStart(2, '0')}h ${String(diffMins).padStart(2, '0')}m`);
+    }
+}

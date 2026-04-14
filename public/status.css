@@ -1056,6 +1056,28 @@ body::after {
     background: rgba(255, 255, 255, 0.03);
 }
 
+.ai-history-card.is-latest {
+    background: linear-gradient(135deg, rgba(240, 185, 11, 0.12), rgba(19, 24, 32, 0.95));
+    border-color: rgba(240, 185, 11, 0.38);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3), inset 0 0 16px rgba(240, 185, 11, 0.08);
+    padding: 20px;
+}
+
+.ai-history-card.compact {
+    padding: 10px 14px;
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid rgba(255, 255, 255, 0.08);
+    opacity: 0.85;
+    transition: all 0.2s ease;
+}
+
+.ai-history-card.compact:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.02);
+    border-left-color: var(--amber);
+}
+
 .ai-history-head {
     display: flex;
     justify-content: space-between;
@@ -1140,55 +1162,102 @@ body::after {
     justify-content: center;
 }
 
-.openclaw-card {
+/* 资金分布与绩效样式 */
+.capital-wrap {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 14px;
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+    gap: 16px;
+    padding: 8px 4px;
 }
 
-.openclaw-card.is-buy {
-    border-color: rgba(22, 199, 132, 0.34);
-    box-shadow: 0 0 20px rgba(22, 199, 132, 0.1);
-}
-
-.openclaw-card.is-sell {
-    border-color: rgba(255, 91, 119, 0.34);
-    box-shadow: 0 0 20px rgba(255, 91, 119, 0.1);
-}
-
-.openclaw-card.is-hold {
-    border-color: rgba(240, 185, 11, 0.28);
-    box-shadow: 0 0 20px rgba(240, 185, 11, 0.08);
-}
-
-.openclaw-row {
+.asset-alloc-stats {
     display: flex;
     justify-content: space-between;
-    align-items: center;
     gap: 12px;
 }
 
-.openclaw-label {
-    color: var(--text-muted);
-    font-size: 0.78rem;
+.alloc-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
-.openclaw-value {
-    color: var(--text);
-    font-size: 0.86rem;
+.alloc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
 }
 
-.openclaw-reason {
+.dot-cash { background: var(--green); box-shadow: 0 0 10px rgba(22, 199, 132, 0.4); }
+.dot-reserved { background: var(--amber); box-shadow: 0 0 10px rgba(240, 185, 11, 0.4); }
+
+.alloc-label {
+    font-size: 0.76rem;
     color: var(--text-muted);
-    line-height: 1.65;
-    font-size: 0.82rem;
-    white-space: pre-wrap;
-    word-break: break-word;
 }
+
+.alloc-val {
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.asset-bar-container {
+    height: 12px;
+    margin: 4px 0;
+}
+
+.asset-bar-rail {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 999px;
+    overflow: hidden;
+    display: flex;
+}
+
+.asset-bar-fill {
+    height: 100%;
+    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.asset-bar-fill.cash {
+    background: linear-gradient(90deg, var(--green), #4ae2a0);
+}
+
+.asset-bar-fill.reserved {
+    background: linear-gradient(90deg, var(--amber), #ffda62);
+}
+
+.perf-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.perf-stat-box {
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.perf-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.perf-val {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+/* OpenClaw 样式已移除 */
 
 .decision-action {
     margin-bottom: 6px;

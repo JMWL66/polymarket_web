@@ -99,10 +99,10 @@ launch_bg() {
     echo "$!"
 }
 
-BOT_PID="$(launch_bg "$BOT_LOG" python3 -u bot.py)"
+BOT_PID="$(launch_bg "$BOT_LOG" ./venv/bin/python3 -u bot.py)"
 echo "$BOT_PID" >"$BOT_PID_FILE"
 
-SERVER_PID="$(launch_bg "$SERVER_LOG" python3 -u status_server.py)"
+SERVER_PID="$(launch_bg "$SERVER_LOG" ./venv/bin/python3 -u status_server.py)"
 echo "$SERVER_PID" >"$SERVER_PID_FILE"
 
 sleep 2

@@ -22,7 +22,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATUS_FILE = os.path.join(BASE_DIR, "bot_status.json")
 PAPER_STATE_FILE = os.path.join(BASE_DIR, "paper_trade_state.json")
 CONTROL_FILE = os.path.join(BASE_DIR, "trading_control.json")
-DECISION_SIGNAL_FILE = os.path.join(BASE_DIR, "decision_signal.json")
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 
@@ -185,14 +184,7 @@ def load_paper_state():
     return None
 
 
-def load_decision_signal():
-    try:
-        if os.path.exists(DECISION_SIGNAL_FILE):
-            with open(DECISION_SIGNAL_FILE, "r") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return None
+# load_decision_signal 函数已移除
 
 
 def load_trading_control():
@@ -629,14 +621,6 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
             state = load_paper_state() or {}
             send_json(self, state.get("ai_history", []))
 
-        # === OpenClaw 决策信号 ===
-        elif path == '/api/decision-signal':
-            signal = load_decision_signal()
-            if signal:
-                send_json(self, signal)
-            else:
-                send_json(self, {"error": "暂无 decision_signal.json"}, 404)
-
         # === 挂单 (Data API，公开) ===
         elif path == '/api/orders':
             env = load_env()
@@ -660,8 +644,8 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
             summary = state.get("summary", {})
             signal = state.get("last_signal", {})
             control = load_trading_control()
-            decision_signal = load_decision_signal() or {}
             config = {
+                "ai_decision_interval_seconds": signal.get("decision_interval_seconds") or env.get("AI_DECISION_INTERVAL_SECONDS", "180"),
                 "bet_amount": env.get("BET_AMOUNT", "1"),
                 "max_bet_amount": env.get("MAX_BET_AMOUNT", "10"),
                 "paper_bet_amount": env.get("PAPER_BET_AMOUNT", env.get("BET_AMOUNT", "1")),
@@ -697,17 +681,11 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "signal_price": signal.get("current_price"),
                 "daily_change_percent": signal.get("change_percent"),
                 "signal_reason": signal.get("reason"),
-                "strategy_name": report.get("strategy"),
+                "strategy_name": report.get("strategy") or "配置 AI 驱动决策",
                 "ai_enabled": env.get("AI_ENABLED", "true"),
                 "ai_model": signal.get("ai_model") or env.get("AI_MODEL", "gpt-4o-mini"),
                 "ai_source": signal.get("ai_source"),
                 "ai_decision_id": signal.get("decision_id"),
-                "ai_decision_interval_seconds": signal.get("decision_interval_seconds") or env.get("AI_DECISION_INTERVAL_SECONDS", "180"),
-                "decision_signal_action": decision_signal.get("action"),
-                "decision_signal_confidence": decision_signal.get("confidence"),
-                "decision_signal_source": decision_signal.get("source"),
-                "decision_signal_timestamp": decision_signal.get("timestamp") or decision_signal.get("generated_at"),
-                "decision_signal_reason": decision_signal.get("reason") or decision_signal.get("reasoning"),
                 "exit_rule": f"best bid 浮盈 > ${env.get('PAPER_TAKE_PROFIT_USD', '0.12')} 提前卖出，否则到期离场",
                 "trading_enabled": control.get("trading_enabled", True),
             }

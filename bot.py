@@ -21,13 +21,14 @@ from zoneinfo import ZoneInfo
 import aiohttp
 import requests
 from dotenv import load_dotenv
+from live_trader import LiveTrader
 
 # 状态文件路径
 STATUS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bot_status.json")
 PAPER_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_trade_state.json")
 REPORT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper_trade_report.md")
+# CONTROL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trading_control.json")
 CONTROL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trading_control.json")
-DECISION_SIGNAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "decision_signal.json")
 
 def load_json_file(path, default):
     try:
@@ -78,36 +79,7 @@ def safe_float(value, default=None):
         return default
 
 
-def load_openclaw_signal():
-    signal = load_json_file(DECISION_SIGNAL_FILE, {})
-    if not isinstance(signal, dict):
-        return None
-
-    action = str(signal.get("action", "")).upper().strip()
-    if action not in {"BUY", "SELL", "HOLD"}:
-        return None
-
-    prediction = str(signal.get("prediction") or signal.get("direction") or action).upper().strip()
-    if prediction not in {"UP", "DOWN", "HOLD"}:
-        prediction = "UP" if action == "BUY" else "DOWN" if action == "SELL" else "HOLD"
-
-    return {
-        "decision_id": signal.get("decision_id") or signal.get("id") or f"OPENCLAW-{int(time.time())}",
-        "generated_at": signal.get("timestamp") or signal.get("generated_at") or datetime.now(timezone.utc).isoformat(),
-        "prediction": prediction,
-        "action": action,
-        "reason": str(signal.get("reason") or signal.get("reasoning") or signal.get("summary") or "OpenClaw 外部决策信号").strip(),
-        "ai_confidence": round(safe_float(signal.get("confidence"), 0.5) or 0.5, 4),
-        "ai_model": str(signal.get("model") or signal.get("agent") or "OpenClaw Decision"),
-        "ai_source": str(signal.get("source") or "openclaw-cron"),
-        "ai_key_factors": [str(x)[:220] for x in (signal.get("key_factors") or [])[:6]],
-        "ai_risk_flags": [str(x)[:220] for x in (signal.get("risk_flags") or [])[:6]],
-        "ai_thought_markdown": str(signal.get("thought_markdown") or signal.get("reason") or signal.get("reasoning") or "OpenClaw 外部决策信号"),
-        "close_positions": bool(signal.get("close_positions", action == "SELL")),
-        "decision_interval_seconds": int(safe_float(signal.get("decision_interval_seconds"), AI_DECISION_INTERVAL_SECONDS) or AI_DECISION_INTERVAL_SECONDS),
-        "external_signal": True,
-        "raw_signal": signal,
-    }
+# 移除了 load_openclaw_signal 函数，系统现在仅依据配置的 AI 进行判断
 
 
 def iso_to_utc_dt(value: str) -> datetime:
@@ -155,12 +127,19 @@ def write_status(bot=None, market_info=None, btc_data=None, prediction=None, pro
 
 # ==================== 配置 ====================
 
-load_dotenv()  # 加载 .env 文件
+# 强化 .env 加载：确保使用绝对路径，并允许覆盖已有环境变量
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+_env_path = os.path.join(_current_dir, ".env")
+load_dotenv(_env_path, override=True)
 
 # Polymarket API 配置
 POLYMARKET_API_KEY = os.getenv("POLYMARKET_API_KEY", "")
+POLYMARKET_API_SECRET = os.getenv("POLYMARKET_API_SECRET", "")
+POLYMARKET_API_PASSPHRASE = os.getenv("POLYMARKET_API_PASSPHRASE", "")
 POLYMARKET_PRIVATE_KEY = os.getenv("POLYMARKET_PRIVATE_KEY", "")
 POLYMARKET_WALLET_ADDRESS = os.getenv("POLYMARKET_WALLET_ADDRESS", "")
+POLYMARKET_FUNDER_ADDRESS = os.getenv("POLYMARKET_FUNDER_ADDRESS", POLYMARKET_WALLET_ADDRESS)
+POLYMARKET_SIGNATURE_TYPE = int(os.getenv("POLYMARKET_SIGNATURE_TYPE", "1"))
 
 # 交易配置
 BET_AMOUNT = float(os.getenv("BET_AMOUNT", "5"))        # 每次下注金额 (USDC)
@@ -185,6 +164,11 @@ PAPER_MAX_NEW_POSITIONS_PER_CYCLE = int(os.getenv("PAPER_MAX_NEW_POSITIONS_PER_C
 PAPER_MARKET_INTERVAL_MINUTES = int(os.getenv("PAPER_MARKET_INTERVAL_MINUTES", "15"))
 PAPER_FORWARD_SLOT_COUNT = int(os.getenv("PAPER_FORWARD_SLOT_COUNT", "8"))
 PAPER_WALLET_LABEL = os.getenv("PAPER_WALLET_LABEL", "LOCAL-SIM")
+
+# 真实交易配置 (Live)
+DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
+LIVE_BET_AMOUNT = float(os.getenv("LIVE_BET_AMOUNT", "1"))
+LIVE_MAX_OPEN_POSITIONS = int(os.getenv("LIVE_MAX_OPEN_POSITIONS", "1"))
 
 # BTC 配置
 BTC_PRICE_SOURCE = os.getenv("BTC_PRICE_SOURCE", "binance")  # binance 或 coingecko
@@ -522,8 +506,13 @@ class AIDecisionEngine:
         if not raw:
             return {}
 
+        # 剥离 <think> 标签
         think_stripped = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-        candidates = [think_stripped, raw]
+        
+        # 剥离 Markdown 代码块 (如 ```json ... ```)
+        md_stripped = re.sub(r"```(?:json)?\s*(.*?)\s*```", r"\1", think_stripped, flags=re.DOTALL).strip()
+        
+        candidates = [md_stripped, think_stripped, raw]
 
         for candidate in candidates:
             if not candidate:
@@ -540,7 +529,16 @@ class AIDecisionEngine:
                 except Exception:
                     pass
 
-        raise ValueError(f"模型输出不是有效 JSON: {raw[:300]}")
+        # 暴力搜索所有 {...} 结构的子串 (防止中间有文字干扰)
+        json_matches = re.findall(r"\{.*\}", raw, flags=re.DOTALL)
+        for j_match in json_matches:
+            try:
+                # 尝试修复由于截断导致的括号不匹配的情况 (可选，但目前先只尝试完整解析)
+                return json.loads(j_match)
+            except Exception:
+                pass
+
+        raise ValueError(f"模型输出不是有效 JSON (已尝试清洗和提取): {raw[:500]}")
 
     def build_rule_fallback(self, payload: dict, fallback_reason: str) -> dict:
         btc = payload.get("btc", {})
@@ -572,13 +570,12 @@ class AIDecisionEngine:
 
     def build_prompt(self, payload: dict) -> tuple[str, str]:
         system = (
-            "你是一个谨慎的 Polymarket BTC 短线纸上交易分析器。"
-            "你只能输出严格 JSON，不要输出 markdown。"
+            "你是一个谨慎的 Polymarket BTC 短短线交易分析器。"
+            "### 重要：你必须且只能输出一个合法的 JSON 对象，严禁在前言、后语或思考过程结束后添加任何非 JSON 文本解释。"
             "目标：每 3 分钟评估一次是否 BUY / SELL / HOLD。"
-            "BUY 表示允许按目标方向寻找可交易盘口开仓；SELL 表示建议把当前持仓平掉；HOLD 表示观望。"
-            "prediction 只能是 UP、DOWN、HOLD。action 只能是 BUY、SELL、HOLD。"
-            "必须提供 reasoning、key_factors、risk_flags、confidence。"
-            "如果信号不够强，宁可 HOLD。"
+            "BUY 表示允许按目标方向开仓；SELL 表示建议平掉现有仓位；HOLD 表示观望。"
+            "JSON 结构必须包含: prediction (UP/DOWN/HOLD), action (BUY/SELL/HOLD), reasoning, key_factors (list), risk_flags (list), confidence (0.0-1.0)。"
+            "如果你当前不确定，请在 action 中输出 HOLD。"
         )
         user = json.dumps(payload, ensure_ascii=False)
         return system, user
@@ -586,63 +583,50 @@ class AIDecisionEngine:
     def call_model(self, payload: dict) -> dict:
         if not self.enabled:
             return self.build_rule_fallback(payload, "AI_ENABLED=false")
-        if not self.api_key:
-            return self.build_rule_fallback(payload, "未配置 AI_API_KEY")
+        if not self.api_key or "your_openai_key" in self.api_key:
+            return self.build_rule_fallback(payload, "未配置有效的 AI_API_KEY")
 
-        system, user = self.build_prompt(payload)
-        body = {
-            "model": self.model,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        resp = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=body, timeout=45)
-        resp.raise_for_status()
-        data = resp.json()
-        content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}").strip()
-        parsed = self.parse_json_content(content)
-        return {
-            "prediction": str(parsed.get("prediction", "HOLD")).upper(),
-            "action": str(parsed.get("action", "HOLD")).upper(),
-            "confidence": round(float(parsed.get("confidence", 0.0)), 4),
-            "reasoning": str(parsed.get("reasoning", ""))[:1200],
-            "key_factors": [str(x)[:220] for x in (parsed.get("key_factors") or [])[:6]],
-            "risk_flags": [str(x)[:220] for x in (parsed.get("risk_flags") or [])[:6]],
-            "close_positions": bool(parsed.get("close_positions", str(parsed.get("action", "")).upper() == "SELL")),
-            "source": "llm",
-        }
+        try:
+            system, user = self.build_prompt(payload)
+            body = {
+                "model": self.model,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+            }
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+            print(f"DEBUG: [AIDecisionEngine] Calling model {self.model} at {self.base_url}")
+            resp = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=body, timeout=45)
+            if not resp.ok:
+                error_detail = resp.text[:1000]
+                print(f"DEBUG: [AIDecisionEngine] Error Response: {error_detail}")
+                raise Exception(f"{resp.status_code} {resp.reason}: {error_detail}")
+            
+            print(f"DEBUG: [AIDecisionEngine] Response OK (Status 200)")
+            data = resp.json()
+            content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "{}").strip()
+            parsed = self.parse_json_content(content)
+            return {
+                "prediction": str(parsed.get("prediction", "HOLD")).upper(),
+                "action": str(parsed.get("action", "HOLD")).upper(),
+                "confidence": round(float(parsed.get("confidence", 0.0)), 4),
+                "reasoning": str(parsed.get("reasoning", ""))[:1200],
+                "key_factors": [str(x)[:220] for x in (parsed.get("key_factors") or [])[:6]],
+                "risk_flags": [str(x)[:220] for x in (parsed.get("risk_flags") or [])[:6]],
+                "close_positions": bool(parsed.get("close_positions", str(parsed.get("action", "")).upper() == "SELL")),
+                "source": "llm",
+            }
+        except Exception as e:
+            return self.build_rule_fallback(payload, f"AI 调用异常: {e}")
 
-
-class TradingBot:
-    """交易 Bot 主类"""
-    
-    def __init__(self):
-        self.poly_client = PolymarketClient(
-            api_key=POLYMARKET_API_KEY,
-            private_key=POLYMARKET_PRIVATE_KEY,
-            wallet_address=POLYMARKET_WALLET_ADDRESS
-        )
-        self.btc_provider = BTCDataprovider()
-        self.ai_predictor = AIPredictor()
-        
-        # 历史数据
-        self.price_history = []
-        
-        # 交易统计
-        self.stats = {
-            "total_trades": 0,
-            "winning_trades": 0,
-            "losing_trades": 0,
-            "total_profit": 0.0
-        }
+# 过时的 TradingBot 类及其引用的 AIPredictor 已移除
     
     async def get_market_info(self, market_id: str) -> Optional[dict]:
         """获取市场详情和当前概率"""
@@ -1425,28 +1409,7 @@ class ContinuousPaperTradingBot:
         return summary
 
     def get_ai_signal(self, snapshots: list, now_utc: datetime, market_cache: dict) -> dict:
-        external_signal = load_openclaw_signal()
-        if external_signal:
-            btc_data = BTCDataprovider.get_price_with_change() or {}
-            try:
-                daily_open = self.get_daily_open()
-            except Exception:
-                daily_open = external_signal.get("daily_open") or 0.0
-            current_price = safe_float((btc_data or {}).get("price"), external_signal.get("current_price"))
-            change_percent = None
-            if current_price and daily_open:
-                change_percent = round(((current_price - daily_open) / daily_open * 100), 4)
-            external_signal.update({
-                "daily_open": round(safe_float(daily_open, 0.0) or 0.0, 2) if daily_open else None,
-                "current_price": round(safe_float(current_price, 0.0) or 0.0, 2) if current_price else None,
-                "change_percent": change_percent,
-                "btc_data": btc_data,
-                "ai_candidate_markets": self.build_ai_candidate_digest(self.summarize_market_candidates(snapshots, now_utc, market_cache)),
-                "reason": f"OpenClaw 信号优先：{external_signal.get('reason', '无说明')}",
-            })
-            self.last_ai_signal = external_signal
-            return external_signal
-
+        # 移除了 OpenClaw 外部信号逻辑，直接进入内部 AI/规则判断
         cached_signal = self.last_ai_signal or self.state.get("last_signal") or {}
         cached_at = cached_signal.get("generated_at")
         if cached_at:
@@ -1927,6 +1890,7 @@ class ContinuousPaperTradingBot:
                 "market_slug": (focus_market or {}).get("resolved_slug"),
                 "trading_mode": "paper_live",
                 "total_trades": self.state["stats"].get("total_trades", 0),
+                "win_rate": summary.get("win_rate", 0.0),
                 "paper_profit": report.get("profit"),
                 "paper_roi_percent": report.get("roi_percent"),
                 "paper_result": report.get("result"),
@@ -1938,7 +1902,8 @@ class ContinuousPaperTradingBot:
                 "open_positions": summary.get("open_positions"),
                 "cash_balance": summary.get("cash_balance"),
                 "reserved_balance": summary.get("reserved_balance"),
-                "strategy_name": "OpenClaw/LLM 决策 + 当日BTC 15分钟盘口 + Order Book筛选",
+                "session_started_at": summary.get("session_started_at"),
+                "strategy_name": "配置 AI 驱动决策 + 当日 BTC 15分钟盘口 + Order Book 筛选",
                 "ai_action": signal.get("action") if signal else None,
                 "ai_confidence": signal.get("ai_confidence") if signal else None,
                 "ai_model": signal.get("ai_model") if signal else AI_MODEL,
@@ -2396,6 +2361,80 @@ class ContinuousPaperTradingBot:
             await asyncio.sleep(PAPER_POLL_INTERVAL_SECONDS)
 
 
+class LiveTradingBot(ContinuousPaperTradingBot):
+    """
+    真实交易模式执行类。
+    继承 ContinuousPaperTradingBot 的扫描和决策逻辑，
+    仅重写 open_position 和 close_position 为真实下单。
+    """
+    def __init__(self):
+        super().__init__()
+        self.live_trader = LiveTrader(
+            host="https://clob.polymarket.com",
+            private_key=POLYMARKET_PRIVATE_KEY,
+            funder_address=POLYMARKET_FUNDER_ADDRESS,
+            signature_type=POLYMARKET_SIGNATURE_TYPE,
+            api_creds={
+                "key": POLYMARKET_API_KEY,
+                "secret": POLYMARKET_API_SECRET,
+                "passphrase": POLYMARKET_API_PASSPHRASE
+            },
+            dry_run=DRY_RUN
+        )
+        self.wallet_label = f"LIVE-{'DRY' if DRY_RUN else 'REAL'}"
+
+    def open_position(self, snapshot, signal, stake, entry_price, outcome, quote, now_utc):
+        # 1. 真实下单
+        token_id = quote.get("token_id")
+        real_stake = LIVE_BET_AMOUNT
+        
+        tick_size = str(snapshot.get("minimumTickSize") or "0.01")
+        neg_risk = bool(snapshot.get("neg_risk"))
+
+        order_id = self.live_trader.buy(token_id, entry_price, real_stake, tick_size, neg_risk)
+        
+        if not order_id and not DRY_RUN:
+            print(f"❌ 真实下单失败，跳过本地仓位记录")
+            return "真实下单失败"
+
+        # 2. 调用父类方法记录本地仓位
+        res = super().open_position(snapshot, signal, real_stake, entry_price, outcome, quote, now_utc)
+        
+        if self.state["trades"]:
+            self.state["trades"][0]["order_id"] = order_id
+            
+        return f"实盘{res} (ID: {order_id})"
+
+    def close_position(self, position, exit_price, exit_reason, now_utc, signal=None):
+        # 1. 真实平仓
+        token_id = position.get("token_id")
+        shares = position.get("shares")
+        
+        tick_size = "0.01" 
+        neg_risk = False
+        
+        order_id = self.live_trader.sell(token_id, exit_price, shares, tick_size, neg_risk)
+        
+        # 2. 调用父类方法更新本地状态
+        res = super().close_position(position, exit_price, exit_reason, now_utc, signal=signal)
+        return f"实盘{res}"
+
+    async def run_cycle(self):
+        # 使用实盘参数覆盖
+        global PAPER_MAX_OPEN_POSITIONS, PAPER_BET_AMOUNT
+        old_max = PAPER_MAX_OPEN_POSITIONS
+        old_bet = PAPER_BET_AMOUNT
+        
+        PAPER_MAX_OPEN_POSITIONS = LIVE_MAX_OPEN_POSITIONS
+        PAPER_BET_AMOUNT = LIVE_BET_AMOUNT
+        
+        try:
+            await super().run_cycle()
+        finally:
+            PAPER_MAX_OPEN_POSITIONS = old_max
+            PAPER_BET_AMOUNT = old_bet
+
+
 # ==================== 主程序 ====================
 
 async def main():
@@ -2416,6 +2455,15 @@ async def main():
         await paper_bot.run()
         return
 
+    print(f"🌍 AI 配置: URL={AI_BASE_URL}, MODEL={AI_MODEL}, ENABLED={AI_ENABLED}")
+    
+    if TRADING_MODE == "live":
+        print(f"💰 当前模式: {TRADING_MODE} (DRY_RUN={DRY_RUN})")
+        print("🚀 启动 Polymarket 真实交易 Bot...")
+        live_bot = LiveTradingBot()
+        await live_bot.run()
+        return
+
     if not POLYMARKET_WALLET_ADDRESS:
         print("❌ 请在 .env 文件中设置 POLYMARKET_WALLET_ADDRESS")
         return
@@ -2425,8 +2473,8 @@ async def main():
         print("   参考 .env.example")
         return
 
-    bot = TradingBot()
-    await bot.run_forever(interval_seconds=300)  # 5 分钟
+    print("❌ 未能识别 TRADING_MODE，程序退出。请检查 .env。")
+    return
 
 
 if __name__ == "__main__":
