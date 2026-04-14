@@ -17,13 +17,30 @@ from urllib.parse import urlparse
 
 PORT = 8889
 
-# 文件路径
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATUS_FILE = os.path.join(BASE_DIR, "bot_status.json")
-PAPER_STATE_FILE = os.path.join(BASE_DIR, "paper_trade_state.json")
-CONTROL_FILE = os.path.join(BASE_DIR, "trading_control.json")
-ENV_FILE = os.path.join(BASE_DIR, ".env")
-PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+# 路径设置
+# 当前文件在 src/server/，需要向上跳两级找到项目根目录
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(CURRENT_DIR))
+DATA_DIR = os.path.join(ROOT_DIR, "data")
+PUBLIC_DIR = os.path.join(ROOT_DIR, "public")
+ENV_FILE = os.path.join(ROOT_DIR, ".env")
+
+STATUS_FILE = os.path.join(DATA_DIR, "bot_status.json")
+PAPER_STATE_FILE = os.path.join(DATA_DIR, "paper_trade_state.json")
+CONTROL_FILE = os.path.join(DATA_DIR, "trading_control.json")
+
+def load_json_file(path, default=None):
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except:
+        pass
+    return default
+
+def save_json_file(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 # Polymarket CLOB API
 CLOB_BASE = "https://clob.polymarket.com"
@@ -81,9 +98,17 @@ def load_env():
         "MINIMAX_API_KEY",
         "AI_ENABLED",
     }
-    for key in override_keys:
-        if key in os.environ:
-            env[key] = os.environ[key]
+    # 合并运行时控制文件 (优先级最高)
+    try:
+        if os.path.exists(CONTROL_FILE):
+            with open(CONTROL_FILE, 'r') as f:
+                control = json.load(f)
+                for k, v in control.items():
+                    if k in override_keys or k == "TRADING_MODE":
+                        env[k] = v
+    except Exception:
+        pass
+        
     return env
 
 
@@ -526,6 +551,28 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 trading_enabled = str(value).strip().lower() in {"1", "true", "yes", "on"}
 
             send_json(self, save_trading_control(trading_enabled))
+            return
+
+        elif path == '/api/update-config':
+            try:
+                payload = self.read_json_body()
+                # 从 trading_control.json 读取现有配置
+                control = load_json_file(CONTROL_FILE, {})
+                
+                # 更新允许的字段
+                allowed_keys = [
+                    "TRADING_MODE", "POLYMARKET_API_KEY", "POLYMARKET_API_SECRET", 
+                    "POLYMARKET_API_PASSPHRASE", "POLYMARKET_PRIVATE_KEY", "trading_enabled"
+                ]
+                for k in allowed_keys:
+                    if k in payload:
+                        control[k] = payload[k]
+                
+                control["updated_at"] = datetime.now().isoformat()
+                save_json_file(CONTROL_FILE, control)
+                send_json(self, {"success": True, "config": control})
+            except Exception as e:
+                send_json(self, {"error": str(e)}, 500)
             return
 
         send_json(self, {"error": "未找到接口"}, 404)

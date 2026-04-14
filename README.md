@@ -1,319 +1,74 @@
-# Polymarket BTC 15m Paper Trading Dashboard
+# Polymarket BTC 自动化交易终端 (Modular Edition)
 
-一个用于 **Polymarket BTC 15 分钟 Up/Down 市场** 的本地模拟交易项目。
+一个基于 AI 决策引擎驱动的 Polymarket BTC 涨跌预测自动化交易系统。支持模拟盘 (Paper Trading) 无损测试与实盘 (Live Trading) 的一键热切换。
 
-它包含四部分：
+## 🌟 核心特性
 
-1. **模拟交易机器人**：按规则筛选盘口并执行纸上开仓 / 平仓
-2. **OpenClaw 外部决策信号**：每 3 分钟生成一次 `decision_signal.json`
-3. **本地监控面板**：实时查看 BTC、盘口、仓位、交易流水、AI / OpenClaw 决策
-4. **历史归档**：每次重启模拟交易前，自动归档上一轮记录，方便回看和分享
+- **模块化架构**：核心逻辑从单体脚本拆分为 `core` (配置/状态), `api` (市场接口), `ai` (执行策略) 等独立模块。
+- **双模引擎 (Sim/Live)**：内置全功能模拟器，支持 1:1 还原实盘成交逻辑，通过 Web 控制台可实现毫秒级模式热切换。
+- **AI 决策流**：接入深度学习模型/策略分析，自动判断 BTC 趋势并执行最优买卖逻辑。
+- **现代化 Web 仪表盘**：采用组件化设计的监控中心，实时同步交易流水、资产分配图表及 AI 决策过程。
+- **环境自检**：一键式启动脚本，自动处理虚拟环境、依赖安装及服务编排。
 
-> 默认是 **模拟交易（paper trading）**，不会真实下单到 Polymarket。
-
----
-
-## 当前策略概览
-
-当前项目默认运行的是：
-
-- **市场类型**：Polymarket BTC 15 分钟 Up/Down 市场
-- **运行模式**：`paper_live`
-- **信号优先级**：优先读取 `decision_signal.json`（通常由 OpenClaw cron 生成）
-- **回退机制**：如果没有外部信号，则回退到项目内置 AI / 规则逻辑
-- **面板地址**：`http://localhost:8889`
-
-### 决策链路
+## 📂 项目结构
 
 ```text
-OpenClaw cron (每3分钟)
-        ↓
-decision_signal.json
-        ↓
-bot.py 优先读取外部信号
-        ↓
-按盘口条件执行模拟开仓 / 平仓
-        ↓
-status_server.py + public/ 面板展示
+.
+├── bot.py                  # 项目总入口
+├── run.sh                  # [推荐] 一键启动/部署脚本
+├── data/                   # 运行时数据 (JSON 状态、交易控制)
+├── src/                    # 核心源码
+│   ├── ai/                 # AI 策略逻辑
+│   ├── api/                # 市场行情与 CLOB 接口
+│   ├── core/               # 配置、常量与工具类
+│   ├── server/             # 监控服务器后端
+│   └── trading/            # 模拟器与实盘执行引擎 (LiveTrader)
+├── public/                 # 前端监控中心资源 (HTML/CSS/JS)
+├── scripts/                # 启动与归档 Shell 脚本
+├── docs/                   # 交易报告与文档
+└── history/                # 历史交易记录存档
 ```
 
----
+## 🚀 快速开始
 
-## 项目结构
-
-```text
-polymarket_web/
-├── bot.py                      # 模拟交易机器人主逻辑
-├── status_server.py            # 本地 HTTP 服务 + API + 静态面板
-├── start_paper_sim.sh          # 一键启动模拟交易 + 面板（启动前自动归档旧记录）
-├── stop_paper_sim.sh           # 停止模拟交易 + 面板
-├── requirements.txt            # Python 依赖
-├── .env                        # 本地配置（不要上传真实密钥）
-├── .env.example                # 配置模板
-├── docs/
-│   └── PROJECT_TODO.md         # 早期待办与整理说明
-├── decision_signal.json        # OpenClaw / 外部信号源（本地运行文件，不建议纳入版本管理）
-├── bot_status.json             # 当前运行状态缓存（本地运行文件）
-├── paper_trade_state.json      # 当前模拟账户状态、持仓、交易流水（本地运行文件）
-├── paper_trade_report.md       # 当前模拟报告（本地运行文件）
-├── history/                    # 每次重启前自动归档上一轮数据（本地运行目录）
-│   └── YYYY-MM-DD_HH-MM-SS/
-├── .runtime/                   # 当前运行日志、PID 文件（本地运行目录）
-└── public/
-    ├── status.html             # 面板页面
-    ├── status.css              # 面板样式
-    └── status.js               # 面板逻辑
-```
-
----
-
-## 环境要求
-
-- macOS / Linux
-- Python 3.9+
-- 可联网访问 Binance / Polymarket API
-- （可选）OpenClaw，用于生成 `decision_signal.json`
-
-安装依赖：
-
+### 1. 克隆并进入目录
 ```bash
-pip3 install -r requirements.txt
+cd polymarket_web
 ```
 
----
-
-## 配置说明
-
-先复制配置模板：
-
+### 2. 执行一键启动
 ```bash
-cp .env.example .env
+chmod +x run.sh
+./run.sh
 ```
+> 该脚本会自动：验证环境 -> 创建 venv -> 安装依赖 -> 启动 Bot -> 启动监控页面 -> 自动打开浏览器。
 
-### 关键变量
+### 3. 配置密钥
+初次启动后，您可以在打开的 Web 界面（默认 `http://localhost:8889`）点击右上角的齿轮图标 ⚙️，直接在网页上配置您的 Polymarket API 密钥。
 
-#### Polymarket 相关
+## 🛡️ 安全与切换
 
-- `POLYMARKET_API_KEY`
-- `POLYMARKET_API_SECRET`
-- `POLYMARKET_API_PASSPHRASE`
-- `POLYMARKET_PRIVATE_KEY`
-- `POLYMARKET_WALLET_ADDRESS`
+1. **默认模式**：启动默认为 **模拟交易 (Paper Mode)**，不会消耗真实资金。
+2. **切换实盘**：
+   - 导航至顶部按钮切换到“真实账户视图”。
+   - 点击“开启 [实盘] 交易”。系统会自动校验环境并启动 `LiveExecutor`。
+   - 警告：在开启实盘前，请确保您的钱包已有充足的 USDC。
 
-> 虽然当前默认是模拟交易，但项目仍会读取这些配置，用于部分接口和账户信息展示。
+## 🛠️ 配置说明 (.env)
 
-#### 运行模式
+| 变量 | 说明 | 默认值 |
+| :--- | :--- | :--- |
+| `TRADING_MODE` | 运行模式 (paper / live) | `paper` |
+| `AI_ENABLED` | 是否启用 AI 自动信号 | `true` |
+| `PAPER_START_BALANCE` | 模拟盘初始资金 | `100` |
+| `BET_AMOUNT` | 单笔交易金额 (USDC) | `5` |
+| `BTC_UPDOWN_MARKET_ID`| 目标市场 Slug | `--` |
 
-- `TRADING_MODE=paper_live`
+## 📦 依赖项
 
-#### 模拟交易参数
-
-- `PAPER_START_BALANCE`：模拟账户初始资金
-- `PAPER_BET_AMOUNT`：单次模拟开仓金额
-- `PAPER_MIN_ENTRY_PRICE`：允许入场的最小 ask
-- `PAPER_MAX_ENTRY_PRICE`：允许入场的最大 ask
-- `PAPER_MAX_SPREAD`：最大点差
-- `PAPER_MIN_TOP_BOOK_SIZE`：最小盘口深度
-- `PAPER_MIN_MINUTES_TO_EXPIRY`：距离到期的最少分钟数
-- `PAPER_TAKE_PROFIT_USD`：达到该浮盈后提前止盈
-
-#### AI / 外部信号相关
-
-- `AI_ENABLED=true`
-- `AI_DECISION_INTERVAL_SECONDS=180`
-- `AI_PROVIDER=openai_compatible`
-- `AI_BASE_URL=...`
-- `AI_MODEL=...`
-- `AI_API_KEY=...` 或 `MINIMAX_API_KEY=...`
+- `requests`: 同步 API 交互。
+- `python-dotenv`: 环境配置管理。
+- `py-clob-client`: Polymarket 官方 SDK 适配。
 
 ---
-
-## 快速开始
-
-### 1) 启动模拟交易
-
-```bash
-./start_paper_sim.sh
-```
-
-脚本会自动：
-
-- 停掉旧的 bot / 面板进程
-- 把上一轮记录归档到 `history/`
-- 启动新的模拟交易机器人
-- 启动本地监控面板
-
-### 2) 打开仪表盘
-
-浏览器访问：
-
-```text
-http://localhost:8889
-```
-
-### 3) 停止服务
-
-```bash
-./stop_paper_sim.sh
-```
-
----
-
-## OpenClaw 集成
-
-这个项目现在支持把 OpenClaw 作为 **外部信号源**。
-
-### 外部信号文件
-
-机器人会优先读取：
-
-```text
-decision_signal.json
-```
-
-典型结构如下：
-
-```json
-{
-  "timestamp": "2026-03-17T01:39:00Z",
-  "action": "BUY",
-  "prediction": "UP",
-  "confidence": 0.78,
-  "reason": "BTC 日内偏强，允许做激进版模拟开仓。",
-  "source": "openclaw-cron",
-  "decision_id": "OPENCLAW-CRON-XXXX",
-  "close_positions": false
-}
-```
-
-### 优先级
-
-- 有 `decision_signal.json` 且内容有效 → **优先使用外部信号**
-- 没有外部信号 → 回退到机器人内置 AI / 规则策略
-
-### 当前默认使用方式
-
-建议配合 OpenClaw cron：
-
-- 每 3 分钟扫描一次项目状态和当前市场
-- 输出 `BUY / SELL / HOLD`
-- 写入 `decision_signal.json`
-
----
-
-## 面板里能看到什么
-
-面板默认展示：
-
-- BTC 当前价格 / 24h 变化
-- 模拟账户权益 / 可用现金 / 占用资金
-- 当前 AI / OpenClaw 决策
-- OpenClaw 决策信号卡片
-- 当前焦点盘口与 Order Book
-- 当前模拟持仓
-- 最近交易流水
-- AI 决策历史
-
-### 最近做过的 UI 优化
-
-- 交易流水长说明改为 **折叠查看**
-- 交易表更紧凑，适合长时间挂着监控
-- OpenClaw 决策单独展示，方便分辨到底是谁在驱动模拟交易
-
----
-
-## 历史记录与归档
-
-每次执行：
-
-```bash
-./start_paper_sim.sh
-```
-
-启动脚本都会先尝试把上一轮数据归档到：
-
-```text
-history/YYYY-MM-DD_HH-MM-SS/
-```
-
-归档内容包括：
-
-- `bot_status.json`
-- `paper_trade_state.json`
-- `paper_trade_report.md`
-- `decision_signal.json`
-- `paper_bot.log`
-- `status_server.log`
-
-这样你可以：
-
-- 回看每一轮模拟交易过程
-- 比较不同参数或不同信号策略的表现
-- 方便把整轮结果分享给别人
-
----
-
-## 常见问题
-
-### 1. 为什么开启新模拟后之前记录没了？
-
-现在默认已经不是“删除”，而是 **归档**。旧记录会保存在 `history/` 中。
-
-### 2. 为什么没有开仓？
-
-通常是下面几种原因：
-
-- 外部信号给了 `HOLD`
-- 盘口接近平衡，没有明显优势
-- 距离到期太近
-- ask 超出允许入场区间
-- 点差或盘口深度不满足条件
-
-可以看：
-
-- 面板里的 **OpenClaw 决策信号**
-- `paper_trade_state.json` 的 `ai_history`
-- `bot_status.json` 的 `decision_reason`
-
-### 3. 这会真实下单吗？
-
-默认不会。当前是 **paper trading**。
-
-### 4. MiniMax 一定要可用吗？
-
-不一定。你可以：
-
-- 用项目内置 AI（如果 API 可用）
-- 或完全依赖 OpenClaw 写入 `decision_signal.json`
-
----
-
-## 安全提醒
-
-- **不要把真实 API Key / 私钥上传到 GitHub**
-- 建议把 `.env` 加入忽略，或只提交 `.env.example`
-- 如果密钥曾在聊天中、截图中或仓库历史中暴露，建议立即轮换
-
----
-
-## 适合分享给别人的方式
-
-如果你要把这个项目分享给其他人，建议一起附上：
-
-1. 本 README
-2. `.env.example`
-3. 一份脱敏后的 `history/` 示例
-4. 说明当前是模拟交易，不是真实下单系统
-
----
-
-## License / Usage
-
-你可以按自己的需求继续扩展：
-
-- 接入新的外部决策源
-- 增加历史回测视图
-- 给面板加历史归档浏览器
-- 从模拟交易扩展到真实交易（务必单独审计）
-
-如果你准备公开分享，建议再补一份 LICENSE 和一个脱敏后的演示截图。
+*注：本项目仅供学习与交易策略测试使用。实盘交易有风险，入市需谨慎。*

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
 BOT_PID_FILE="$RUNTIME_DIR/paper_bot.pid"
 SERVER_PID_FILE="$RUNTIME_DIR/status_server.pid"

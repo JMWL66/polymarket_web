@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUNTIME_DIR="$ROOT_DIR/.runtime"
+DATA_DIR="$ROOT_DIR/data"
+DOCS_DIR="$ROOT_DIR/docs"
 BOT_PID_FILE="$RUNTIME_DIR/paper_bot.pid"
 SERVER_PID_FILE="$RUNTIME_DIR/status_server.pid"
 BOT_LOG="$RUNTIME_DIR/paper_bot.log"
@@ -47,10 +49,9 @@ archive_previous_run() {
     mkdir -p "$archive_dir"
 
     for file in \
-        "$ROOT_DIR/bot_status.json" \
-        "$ROOT_DIR/paper_trade_state.json" \
-        "$ROOT_DIR/paper_trade_report.md" \
-        "$ROOT_DIR/decision_signal.json" \
+        "$DATA_DIR/bot_status.json" \
+        "$DATA_DIR/paper_trade_state.json" \
+        "$DOCS_DIR/paper_trade_report.md" \
         "$BOT_LOG" \
         "$SERVER_LOG"
     do
@@ -102,7 +103,7 @@ launch_bg() {
 BOT_PID="$(launch_bg "$BOT_LOG" ./venv/bin/python3 -u bot.py)"
 echo "$BOT_PID" >"$BOT_PID_FILE"
 
-SERVER_PID="$(launch_bg "$SERVER_LOG" ./venv/bin/python3 -u status_server.py)"
+SERVER_PID="$(launch_bg "$SERVER_LOG" ./venv/bin/python3 -u src/server/status_server.py)"
 echo "$SERVER_PID" >"$SERVER_PID_FILE"
 
 sleep 2
