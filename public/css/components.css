@@ -1,0 +1,80 @@
+/* ========= 组件级样式 (1:1 还原) ========= */
+
+/* 指标卡 */
+.metrics-row {
+    --metric-columns: 4;
+    display: grid;
+    grid-template-columns: repeat(var(--metric-columns), minmax(0, 1fr));
+    gap: 14px;
+}
+.metric-card { padding: 16px; transition: transform 0.18s ease, border-color 0.18s ease; }
+.metric-value { margin: 10px 0 4px; font-size: clamp(1.35rem, 2vw, 1.8rem); font-weight: 700; line-height: 1.1; }
+.metric-sub { color: var(--text-muted); font-size: 0.82rem; }
+
+/* 按钮与开关 */
+.switch-btn, .trade-toggle-btn, .settings-btn {
+    border: 1px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.18s ease;
+}
+.switch-btn.active {
+    color: var(--text);
+    border-color: rgba(240, 185, 11, 0.32);
+    background: linear-gradient(180deg, rgba(240, 185, 11, 0.18), rgba(240, 185, 11, 0.05));
+    box-shadow: 0 10px 24px rgba(240, 185, 11, 0.14);
+}
+.trade-toggle-btn.enabled {
+    color: var(--green);
+    border-color: rgba(22, 199, 132, 0.34);
+    background: linear-gradient(180deg, rgba(22, 199, 132, 0.16), rgba(22, 199, 132, 0.05));
+    box-shadow: 0 10px 24px rgba(22, 199, 132, 0.12);
+}
+.trade-toggle-btn.disabled {
+    color: var(--red);
+    border-color: rgba(255, 91, 119, 0.34);
+    background: linear-gradient(180deg, rgba(255, 91, 119, 0.16), rgba(255, 91, 119, 0.05));
+    box-shadow: 0 10px 24px rgba(255, 91, 119, 0.12);
+}
+.trade-toggle-btn.is-live {
+    color: #fff;
+    border-color: rgba(255, 77, 77, 0.4);
+    background: linear-gradient(135deg, #ff4d4d, #f0b90b);
+    box-shadow: 0 10px 24px rgba(255, 77, 77, 0.35);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    font-weight: 800;
+}
+
+/* 盘口深度 (OrderBook) */
+.orderbook-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.orderbook-card { padding: 10px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); }
+.orderbook-row { display: grid; grid-template-columns: 52px 1fr 14px 52px 1fr; gap: 6px; align-items: center; font-size: 0.72rem; }
+.orderbook-bid { color: var(--green); font-weight: 700; }
+.orderbook-ask { color: var(--red); font-weight: 700; }
+
+/* 交易表格 */
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.data-table th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 8px 6px; color: var(--text-muted); background: rgba(9, 18, 34, 0.94); border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.data-table td { padding: 8px 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-family: var(--font-mono); font-size: 0.73rem; }
+
+/* 标签 (Tags) */
+.tag { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; padding: 3px 9px; border-radius: 999px; font-size: 0.69rem; font-weight: 700; }
+.tag-buy { color: var(--green); background: rgba(74, 222, 128, 0.12); }
+.tag-sell { color: var(--red); background: rgba(251, 113, 133, 0.12); }
+.tag-ok { color: var(--amber); background: rgba(240, 185, 11, 0.1); }
+
+/* AI 历史卡片 */
+.ai-history-card { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.06); background: rgba(255, 255, 255, 0.03); }
+.ai-history-card.is-latest { background: linear-gradient(135deg, rgba(240, 185, 11, 0.12), rgba(19, 24, 32, 0.95)); border-color: rgba(240, 185, 11, 0.38); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3); padding: 20px; }
+
+/* 持仓卡片 (Positions) */
+.position-card { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06); }
+.position-card.is-profit { border-color: rgba(22, 199, 132, 0.18); }
+.position-card.is-loss { border-color: rgba(255, 91, 119, 0.18); }
+.position-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+
+/* 资产分配面板 */
+.asset-bar-rail { position: relative; width: 100%; height: 12px; background: rgba(255, 255, 255, 0.05); border-radius: 999px; overflow: hidden; display: flex; }
+.asset-bar-fill.cash { background: linear-gradient(90deg, var(--green), #4ae2a0); }
+.asset-bar-fill.reserved { background: linear-gradient(90deg, var(--amber), #ffda62); }

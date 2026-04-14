@@ -1,0 +1,91 @@
+/* ========= 宫格布局与面板容器 (1:1 还原) ========= */
+.topbar {
+    position: relative;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    padding: 18px 24px 14px;
+}
+
+.topbar::after {
+    content: "";
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(240, 185, 11, 0.38), transparent);
+}
+
+.topbar-left, .topbar-right, .brand-lockup, .brand-line {
+    display: flex;
+    align-items: center;
+}
+
+.brand-lockup { flex-direction: column; align-items: flex-start; gap: 6px; }
+.topbar-title {
+    font-family: var(--font-display);
+    font-size: clamp(1.45rem, 2.6vw, 2.2rem);
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-shadow: 0 0 24px rgba(240, 185, 11, 0.18);
+}
+
+.main-grid {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+    gap: 16px;
+    padding: 18px 24px 24px;
+    overflow-y: auto;
+}
+
+.col-left, .col-right {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.panel, .metric-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(19, 24, 32, 0.92), rgba(10, 13, 18, 0.9)), var(--surface);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+}
+
+.panel::before, .metric-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(125deg, rgba(240, 185, 11, 0.12), transparent 28%, transparent 72%, rgba(22, 199, 132, 0.08));
+    pointer-events: none;
+}
+
+.panel { padding: 16px; }
+.panel.flex-grow { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.panel-title { font-family: var(--font-display); font-size: 0.94rem; letter-spacing: 0.08em; }
+
+/* 响应式适配 */
+@media (min-width: 1081px) {
+    body { height: 100vh; overflow: hidden; }
+    .topbar { flex: 0 0 auto; gap: 16px; padding: 12px 20px 10px; }
+    .main-grid { height: calc(100vh - 74px); gap: 12px; padding: 12px 20px 16px; overflow: hidden; }
+}
+
+@media (max-width: 720px) {
+    .main-grid { grid-template-columns: 1fr; padding: 14px; }
+    .topbar { flex-direction: column; align-items: flex-start; padding: 14px; }
+}

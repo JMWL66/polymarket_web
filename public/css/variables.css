@@ -1,0 +1,23 @@
+/* ========= CSS 变量与设计令牌 (1:1 还原) ========= */
+:root {
+    --bg: #04070c;
+    --bg-2: #0a111b;
+    --surface: rgba(14, 18, 24, 0.82);
+    --surface-strong: rgba(19, 24, 32, 0.94);
+    --surface-soft: rgba(255, 255, 255, 0.04);
+    --line: rgba(232, 179, 45, 0.16);
+    --line-strong: rgba(232, 179, 45, 0.32);
+    --text: #f4f7fb;
+    --text-muted: #8d97a7;
+    --cyan: #59d8ff;
+    --blue: #4f8cff;
+    --green: #16c784;
+    --red: #ff5b77;
+    --amber: #f0b90b;
+    --radius: 20px;
+    --radius-sm: 12px;
+    --shadow: 0 22px 60px rgba(0, 0, 0, 0.42);
+    --font-display: "Orbitron", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+    --font-sans: "Space Grotesk", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
