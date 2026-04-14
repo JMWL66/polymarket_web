@@ -243,22 +243,33 @@ function renderTradingControl() {
     const note = document.getElementById('trade-toggle-note');
     if (!btn) return;
 
-    btn.classList.remove('enabled', 'disabled', 'pending');
-    btn.classList.add(dashboardState.tradingEnabled ? 'enabled' : 'disabled');
+    btn.classList.remove('enabled', 'disabled', 'pending', 'is-live');
+    
+    const isRealView = getActiveAccountMode() === 'real';
+    const runningMode = (dashboardState.config && dashboardState.config.trading_mode) || 'paper_live';
+    const isReadyToGoLive = isRealView && runningMode !== 'live';
+
+    if (isReadyToGoLive) {
+        // 特殊状态：用户正在真实账户视图，但机器人还在模拟模式
+        btn.classList.add('is-live');
+        btn.textContent = '开启 [实盘] 交易';
+        if (note) note.textContent = '检测到您处于真实账户视图，点击将自动切换机器人为 Live 模式并开始交易。';
+    } else {
+        btn.classList.add(dashboardState.tradingEnabled ? 'enabled' : 'disabled');
+        btn.textContent = dashboardState.tradingEnabled ? '交易已开启' : '交易已关闭';
+        
+        const message = dashboardState.tradingEnabled
+            ? '当前允许机器人继续自动开仓；关闭后不再新开仓，已有持仓仍按规则离场。'
+            : '当前已关闭自动开仓；已有持仓仍会按止盈和到期规则继续处理。';
+        if (note) note.textContent = message;
+    }
+
     if (dashboardState.togglePending) btn.classList.add('pending');
-    btn.textContent = dashboardState.tradingEnabled ? '交易已开启' : '交易已关闭';
 
     if (dashboardState.controlError) {
         btn.title = dashboardState.controlError;
         if (note) note.textContent = dashboardState.controlError;
-        return;
     }
-
-    const message = dashboardState.tradingEnabled
-        ? '当前允许机器人继续自动开仓；关闭后不再新开仓，已有持仓仍按规则离场。'
-        : '当前已关闭自动开仓；已有持仓仍会按止盈和到期规则继续处理。';
-    btn.title = message;
-    if (note) note.textContent = message;
 }
 
 function renderConfig() {
@@ -349,11 +360,26 @@ function setAccountMode(mode, shouldRefresh = true) {
 async function toggleTrading() {
     if (dashboardState.togglePending) return;
 
+    const isRealView = getActiveAccountMode() === 'real';
+    const runningMode = (dashboardState.config && dashboardState.config.trading_mode) || 'paper_live';
+    const isReadyToGoLive = isRealView && runningMode !== 'live';
+
     dashboardState.togglePending = true;
     dashboardState.controlError = '';
     renderTradingControl();
 
     try {
+        // 如果需要切换到实盘
+        if (isReadyToGoLive) {
+            console.log('🔄 正在切换至实盘模式...');
+            const modeResp = await fetch('/api/update-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trading_mode: 'live' }),
+            });
+            if (!modeResp.ok) throw new Error('切换实盘模式失败');
+        }
+
         const resp = await fetch('/api/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -367,7 +393,7 @@ async function toggleTrading() {
         dashboardState.tradingEnabled = data.trading_enabled !== false;
         await Promise.allSettled([fetchControl(), fetchBotStatus(), fetchConfig()]);
     } catch (e) {
-        dashboardState.controlError = '交易开关更新失败: ' + String(e.message || e).substring(0, 40);
+        dashboardState.controlError = '更新失败: ' + String(e.message || e).substring(0, 40);
     } finally {
         dashboardState.togglePending = false;
         renderTradingControl();
