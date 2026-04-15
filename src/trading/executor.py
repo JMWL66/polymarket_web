@@ -110,10 +110,28 @@ class PaperExecutor(BaseExecutor):
         state["positions"] = [p for p in state["positions"] if p["id"] != position["id"]]
         
         # 更新统计数据
-        stats = state.setdefault("stats", {"total_trades": 0, "winning_trades": 0, "total_profit": 0.0})
+        stats = state.setdefault("stats", {"total_trades": 0, "winning_trades": 0, "losing_trades": 0, "total_profit": 0.0})
         stats["total_trades"] += 1
         stats["total_profit"] = round(stats["total_profit"] + profit, 4)
-        if profit >= 0: stats["winning_trades"] += 1
+        if profit >= 0:
+            stats["winning_trades"] += 1
+        else:
+            stats["losing_trades"] += 1
+
+        state.setdefault("trades", []).insert(0, {
+            "id": f"trade-close-{int(time.time())}",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "side": "SELL",
+            "outcome": position.get("outcome"),
+            "market": position.get("market_title") or position.get("market"),
+            "market_slug": position.get("market_slug"),
+            "amount": proceeds,
+            "size": position.get("shares"),
+            "price": exit_price,
+            "status": exit_reason,
+            "reason": exit_reason,
+            "realized_profit": profit,
+        })
         
         self.state_manager.save()
         return f"模拟平仓成功: {exit_reason}, 盈亏: {profit:+.2f}"
@@ -165,8 +183,10 @@ class LiveExecutor(BaseExecutor):
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "side": "BUY",
                 "outcome": outcome,
+                "outcome_index": quote.get("outcome_index"),
                 "market": snapshot.get("question"),
                 "market_slug": snapshot.get("slug"),
+                "end_date": snapshot.get("end_date"),
                 "price": entry_price,
                 "amount": stake,
                 "token_id": token_id,
