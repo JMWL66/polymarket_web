@@ -1,6 +1,6 @@
 import os
 import json
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -12,9 +12,10 @@ STATUS_FILE = os.path.join(DATA_DIR, "bot_status.json")
 PAPER_STATE_FILE = os.path.join(DATA_DIR, "paper_trade_state.json")
 REPORT_FILE = os.path.join(DATA_DIR, "paper_trade_report.md")
 CONTROL_FILE = os.path.join(DATA_DIR, "trading_control.json")
+ENV_FILE = os.path.join(_current_dir, ".env")
 
 # 加载环境变量
-load_dotenv(os.path.join(_current_dir, ".env"), override=True)
+load_dotenv(ENV_FILE, override=True)
 
 class Config:
     @staticmethod
@@ -28,12 +29,23 @@ class Config:
                 pass
         return {}
 
+    @staticmethod
+    def get_env_config():
+        """直接从 .env 读取最新值，支持运行中热更新。"""
+        try:
+            return dotenv_values(ENV_FILE)
+        except Exception:
+            return {}
+
     @classmethod
     def get(cls, key, default=None):
         runtime = cls.get_runtime_config()
         # 运行时配置优先级最高
         if key in runtime:
             return runtime[key]
+        env_config = cls.get_env_config()
+        if key in env_config and env_config[key] not in (None, ""):
+            return env_config[key]
         return os.getenv(key, default)
 
     @classmethod
@@ -89,6 +101,11 @@ AI_TEMPERATURE = Config.get_float("AI_TEMPERATURE", "0.7")
 # 市场配置
 BTC_UPDOWN_MARKET_ID = Config.get("BTC_UPDOWN_MARKET_ID", "")
 BTC_PRICE_SOURCE = Config.get("BTC_PRICE_SOURCE", "binance")
+MARKET_SELECTION_MODE = Config.get("MARKET_SELECTION_MODE", "manual")
+TARGET_MARKET_SLUG = Config.get("TARGET_MARKET_SLUG", "")
+TARGET_MARKET_URL = Config.get("TARGET_MARKET_URL", "")
+STRATEGY_PROFILE = Config.get("STRATEGY_PROFILE", "generic_binary")
+ALLOW_MULTI_OUTCOME = Config.get_bool("ALLOW_MULTI_OUTCOME", "false")
 
 # 实盘额外配置
 DRY_RUN = Config.get_bool("DRY_RUN", "true")

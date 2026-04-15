@@ -87,12 +87,24 @@ def load_env():
         "PAPER_FORWARD_SLOT_COUNT",
         "PAPER_WALLET_LABEL",
         "BTC_UPDOWN_MARKET_ID",
+        "TARGET_MARKET_SLUG",
+        "TARGET_MARKET_URL",
+        "MARKET_SELECTION_MODE",
+        "STRATEGY_PROFILE",
+        "ALLOW_MULTI_OUTCOME",
         "POLYMARKET_WALLET_ADDRESS",
+        "POLYMARKET_API_KEY",
+        "POLYMARKET_API_SECRET",
+        "POLYMARKET_API_PASSPHRASE",
+        "POLYMARKET_PRIVATE_KEY",
+        "POLYMARKET_FUNDER_ADDRESS",
         "AI_UP_THRESHOLD",
         "AI_DOWN_THRESHOLD",
         "AI_ENABLED",
         "AI_MODEL",
         "AI_BASE_URL",
+        "AI_API_KEY",
+        "AI_MIN_CONFIDENCE",
         "AI_PROVIDER",
         "AI_DECISION_INTERVAL_SECONDS",
         "MINIMAX_API_KEY",
@@ -226,13 +238,13 @@ def load_trading_control():
 
 
 def save_trading_control(trading_enabled):
-    state = {
-        "trading_enabled": bool(trading_enabled),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    control = load_json_file(CONTROL_FILE, {})
+    control["trading_enabled"] = bool(trading_enabled)
+    control["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
     with open(CONTROL_FILE, "w") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
-    return state
+        json.dump(control, f, indent=2, ensure_ascii=False)
+    return control
 
 
 def is_paper_mode(env):
@@ -248,9 +260,12 @@ def get_requested_account(parsed, env):
 def extract_market_slug(value):
     if not value:
         return ""
-    if "polymarket.com/event/" in value:
-        return value.split("polymarket.com/event/")[-1].split("#")[0].split("?")[0]
-    return value.strip()
+    value = str(value).strip()
+    for marker in ("polymarket.com/event/", "polymarket.com/market/"):
+        if marker in value:
+            value = value.split(marker, 1)[-1]
+            break
+    return value.split("#", 1)[0].split("?", 1)[0].strip().strip("/")
 
 
 def parse_json_list(value):
@@ -297,23 +312,95 @@ def derive_display_price(last_trade_price, best_bid, best_ask):
     return None, spread
 
 
+def get_configured_market_input(env):
+    return env.get("TARGET_MARKET_URL") or env.get("TARGET_MARKET_SLUG") or env.get("BTC_UPDOWN_MARKET_ID", "")
+
+
+def find_current_btc15m_slug(timeout=5):
+    """动态发现当前活跃的 BTC 15m 市场 slug（与 market.py 逻辑保持一致）"""
+    import math, time as time_mod
+    ts = int(time_mod.time())
+    base = math.ceil(ts / 900) * 900
+    for i in range(4):
+        candidate_ts = base + i * 900
+        slug = f"btc-updown-15m-{candidate_ts}"
+        try:
+            data = http_json_get(f"{GAMMA_BASE}/events?slug={slug}", timeout=timeout)
+            if isinstance(data, list) and data:
+                event = data[0]
+                if event.get("active") and not event.get("closed"):
+                    return slug
+        except Exception:
+            continue
+    return ""
+
+
 def get_active_market_slug(env):
+    # 优先读 bot_status.json（bot 运行时会写入）
     status = load_status_from_file() or {}
     if status.get("market_slug"):
         return status["market_slug"]
+    # 其次读 paper_state
     paper_state = load_paper_state() or {}
     market = paper_state.get("market", {})
     if market.get("slug"):
         return market["slug"]
-    return extract_market_slug(env.get("BTC_UPDOWN_MARKET_ID", ""))
+    configured = extract_market_slug(get_configured_market_input(env))
+    if configured:
+        return configured
+    # 兼容旧的 BTC 15m 自动发现模式
+    dynamic = find_current_btc15m_slug()
+    if dynamic:
+        return dynamic
+    return ""
 
 
 def fetch_market_snapshot(slug, timeout=10):
-    return http_json_get(f"{GAMMA_BASE}/markets/slug/{slug}", timeout=timeout)
+    snapshot = http_json_get(f"{GAMMA_BASE}/markets/slug/{slug}", timeout=timeout)
+    if snapshot and not snapshot.get("error") and parse_json_list(snapshot.get("clobTokenIds")):
+        snapshot.setdefault("slug", slug)
+        return snapshot
+
+    data = http_json_get(f"{GAMMA_BASE}/events?slug={slug}", timeout=timeout)
+    if not isinstance(data, list) or not data:
+        return snapshot if isinstance(snapshot, dict) else {"error": "未找到市场"}
+
+    event = data[0]
+    markets = [item for item in (event.get("markets") or []) if parse_json_list(item.get("clobTokenIds"))]
+    if not markets:
+        return {"error": "事件下没有可交易市场"}
+
+    exact = None
+    for item in markets:
+        if str(item.get("slug") or "").strip() == slug:
+            exact = item
+            break
+
+    if exact is None:
+        if len(markets) == 1:
+            exact = markets[0]
+        else:
+            binary_markets = [item for item in markets if len(parse_json_list(item.get("clobTokenIds"))) == 2]
+            if len(binary_markets) == 1:
+                exact = binary_markets[0]
+            else:
+                return {"error": "该事件包含多个市场，请使用具体 market slug"}
+
+    merged = dict(exact)
+    merged.setdefault("slug", slug)
+    merged.setdefault("question", event.get("title"))
+    merged.setdefault("endDate", event.get("endDate"))
+    merged.setdefault("liquidity", event.get("liquidity"))
+    merged.setdefault("active", event.get("active"))
+    merged.setdefault("closed", event.get("closed"))
+    merged.setdefault("negRisk", event.get("negRisk"))
+    return merged
 
 
 def build_synthetic_orderbook(snapshot):
-    outcomes = parse_json_list(snapshot.get("outcomes")) or ["UP", "DOWN"]
+    outcomes = parse_json_list(snapshot.get("outcomes")) or ["YES", "NO"]
+    if len(outcomes) != 2:
+        return {"error": "当前版本仅支持二元盘口"}
     up_bid = snapshot.get("bestBid")
     up_ask = snapshot.get("bestAsk")
     outcome_prices = [float(item) for item in parse_json_list(snapshot.get("outcomePrices")) or [0.5, 0.5]]
@@ -370,10 +457,12 @@ def fetch_order_book(slug, timeout=10):
     token_ids = parse_json_list(snapshot.get("clobTokenIds"))
     outcomes = parse_json_list(snapshot.get("outcomes"))
     outcome_prices = [float(item) for item in parse_json_list(snapshot.get("outcomePrices")) or []]
+    if len(token_ids) != 2:
+        return {"error": "当前版本仅支持二元盘口"}
     books = []
     source = "clob"
 
-    for idx, token_id in enumerate(token_ids[:2]):
+    for idx, token_id in enumerate(token_ids):
         book = http_json_get(f"{CLOB_BASE}/book?token_id={token_id}", timeout=timeout)
         label = str(outcomes[idx]).upper() if idx < len(outcomes) else f"OUTCOME {idx+1}"
 
@@ -556,21 +645,52 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
         elif path == '/api/update-config':
             try:
                 payload = self.read_json_body()
-                # 从 trading_control.json 读取现有配置
-                control = load_json_file(CONTROL_FILE, {})
-                
-                # 更新允许的字段
-                allowed_keys = [
-                    "TRADING_MODE", "POLYMARKET_API_KEY", "POLYMARKET_API_SECRET", 
-                    "POLYMARKET_API_PASSPHRASE", "POLYMARKET_PRIVATE_KEY", "trading_enabled"
+
+                # ── 凭证字段 → 写入 .env ──
+                ENV_WRITABLE_KEYS = {
+                    "POLYMARKET_API_KEY", "POLYMARKET_API_SECRET", "POLYMARKET_API_PASSPHRASE",
+                    "POLYMARKET_PRIVATE_KEY", "POLYMARKET_FUNDER_ADDRESS", "POLYMARKET_WALLET_ADDRESS",
+                    "AI_API_KEY", "AI_BASE_URL", "AI_MODEL", "AI_MIN_CONFIDENCE",
+                }
+                env_updates = {k: v for k, v in payload.items() if k in ENV_WRITABLE_KEYS}
+                if env_updates:
+                    # 读现有 .env 行，替换或追加
+                    lines = []
+                    replaced = set()
+                    if os.path.exists(ENV_FILE):
+                        with open(ENV_FILE, 'r') as f:
+                            for line in f:
+                                stripped = line.strip()
+                                if stripped and not stripped.startswith('#') and '=' in stripped:
+                                    key = stripped.split('=', 1)[0].strip()
+                                    if key in env_updates:
+                                        lines.append(f"{key}={env_updates[key]}\n")
+                                        replaced.add(key)
+                                        continue
+                                lines.append(line if line.endswith('\n') else line + '\n')
+                    # 追加未替换的新 key
+                    for k, v in env_updates.items():
+                        if k not in replaced:
+                            lines.append(f"{k}={v}\n")
+                    with open(ENV_FILE, 'w') as f:
+                        f.writelines(lines)
+
+                # ── 运行参数字段 → 写入 trading_control.json ──
+                CONTROL_WRITABLE_KEYS = [
+                    "TRADING_MODE", "trading_enabled",
+                    "bet_amount", "paper_bet_amount", "take_profit_usd",
+                    "TARGET_MARKET_SLUG", "TARGET_MARKET_URL",
+                    "MARKET_SELECTION_MODE", "STRATEGY_PROFILE", "ALLOW_MULTI_OUTCOME",
+                    "AI_MIN_CONFIDENCE",
                 ]
-                for k in allowed_keys:
+                control = load_json_file(CONTROL_FILE, {})
+                for k in CONTROL_WRITABLE_KEYS:
                     if k in payload:
                         control[k] = payload[k]
-                
                 control["updated_at"] = datetime.now().isoformat()
                 save_json_file(CONTROL_FILE, control)
-                send_json(self, {"success": True, "config": control})
+
+                send_json(self, {"success": True})
             except Exception as e:
                 send_json(self, {"error": str(e)}, 500)
             return
@@ -642,7 +762,8 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
         # === Market Order Book ===
         elif path == '/api/orderbook':
             env = load_env()
-            slug = get_active_market_slug(env)
+            params = urllib.parse.parse_qs(parsed.query)
+            slug = extract_market_slug((params.get("slug") or [""])[0]) or get_active_market_slug(env)
             if not slug:
                 send_json(self, {"error": "未配置 market slug"}, 400)
                 return
@@ -666,7 +787,41 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
         # === AI 决策历史 ===
         elif path == '/api/ai-decisions':
             state = load_paper_state() or {}
-            send_json(self, state.get("ai_history", []))
+            history = list(state.get("ai_history", []))
+            # 将 bot_status.json 中的最新 AI 决策插到最前面
+            bot_status = load_status_from_file() or {}
+            if bot_status.get("ai_prediction") and bot_status.get("last_update"):
+                market_outcomes = bot_status.get("market_outcomes") or []
+                outcome_summary = []
+                for item in market_outcomes:
+                    outcome_summary.append(
+                        f"[{item.get('index')}] {item.get('label')} @ {item.get('price', '--')}"
+                    )
+                latest = {
+                    "decision_id": "LIVE-" + bot_status["last_update"][:16].replace("T", "-").replace(":", ""),
+                    "generated_at": bot_status["last_update"],
+                    "prediction": bot_status.get("ai_action", "SKIP"),
+                    "action": bot_status.get("ai_action", "SKIP"),
+                    "decision": bot_status.get("ai_action", "SKIP"),
+                    "confidence": bot_status.get("ai_confidence", 0.5),
+                    "model": "MiniMax-M2.7-highspeed",
+                    "source": "live_bot",
+                    "reasoning": bot_status.get("decision_reason", "--"),
+                    "thought_markdown": bot_status.get("decision_reason", "--"),
+                    "key_factors": [
+                        f"市场: {bot_status.get('market_question', '--')}",
+                        f"选择结果: {bot_status.get('ai_outcome_label', '--')}",
+                        "盘口: " + (" | ".join(outcome_summary) if outcome_summary else "--"),
+                    ],
+                    "risk_flags": [],
+                    "execution_summary": bot_status.get("execution_summary") or (
+                        f"实盘模式 · {bot_status.get('trading_mode', 'live').upper()} · "
+                        f"{'交易开启' if bot_status.get('trading_enabled') else '交易关闭'}"
+                    ),
+                    "focus_market": bot_status.get("market_question", ""),
+                }
+                history.insert(0, latest)
+            send_json(self, history)
 
         # === 挂单 (Data API，公开) ===
         elif path == '/api/orders':
@@ -687,6 +842,7 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
         elif path == '/api/config':
             env = load_env()
             state = load_paper_state() or {}
+            bot_status = load_status_from_file() or {}
             report = state.get("report", {})
             summary = state.get("summary", {})
             signal = state.get("last_signal", {})
@@ -712,10 +868,18 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "paper_max_open_positions": env.get("PAPER_MAX_OPEN_POSITIONS", "1"),
                 "stop_loss_enabled": env.get("STOP_LOSS_ENABLED", "true"),
                 "stop_loss_percent": env.get("STOP_LOSS_PERCENT", "0.10"),
-                "market_id": (state.get("market", {}).get("slug") or env.get("BTC_UPDOWN_MARKET_ID", ""))[:32] + "...",
+                "market_id": (bot_status.get("market_slug") or state.get("market", {}).get("slug") or get_active_market_slug(env) or "")[:48],
+                "market_question": bot_status.get("market_question") or state.get("market", {}).get("question") or "",
+                "market_end_date": bot_status.get("market_end_date") or state.get("market", {}).get("end_date") or "",
+                "market_outcomes": bot_status.get("market_outcomes") or [],
+                "target_market_slug": env.get("TARGET_MARKET_SLUG", ""),
+                "target_market_url": env.get("TARGET_MARKET_URL", ""),
+                "market_selection_mode": env.get("MARKET_SELECTION_MODE", "manual"),
+                "strategy_profile": env.get("STRATEGY_PROFILE", "generic_binary"),
                 "wallet": state.get("wallet") or (env.get("POLYMARKET_WALLET_ADDRESS", "")[:10] + "..."),
                 "ai_up_threshold": env.get("AI_UP_THRESHOLD", "0.02"),
                 "ai_down_threshold": env.get("AI_DOWN_THRESHOLD", "-0.02"),
+                "ai_min_confidence": env.get("AI_MIN_CONFIDENCE", "0.60"),
                 "paper_result": report.get("result"),
                 "paper_profit": report.get("profit"),
                 "paper_roi_percent": report.get("roi_percent"),
@@ -731,6 +895,11 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "strategy_name": report.get("strategy") or "配置 AI 驱动决策",
                 "ai_enabled": env.get("AI_ENABLED", "true"),
                 "ai_model": signal.get("ai_model") or env.get("AI_MODEL", "gpt-4o-mini"),
+                "AI_MODEL": env.get("AI_MODEL", "gpt-4o-mini"),
+                "AI_BASE_URL": env.get("AI_BASE_URL", ""),
+                "AI_MIN_CONFIDENCE": env.get("AI_MIN_CONFIDENCE", "0.60"),
+                "POLYMARKET_WALLET_ADDRESS": env.get("POLYMARKET_WALLET_ADDRESS", ""),
+                "POLYMARKET_FUNDER_ADDRESS": env.get("POLYMARKET_FUNDER_ADDRESS", ""),
                 "ai_source": signal.get("ai_source"),
                 "ai_decision_id": signal.get("decision_id"),
                 "exit_rule": f"best bid 浮盈 > ${env.get('PAPER_TAKE_PROFIT_USD', '0.12')} 提前卖出，否则到期离场",

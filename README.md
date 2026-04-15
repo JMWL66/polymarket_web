@@ -1,12 +1,12 @@
-# Polymarket BTC 自动化交易终端 (Modular Edition)
+# Polymarket 通用二元盘口交易终端 (Modular Edition)
 
-一个基于 AI 决策引擎驱动的 Polymarket BTC 涨跌预测自动化交易系统。支持模拟盘 (Paper Trading) 无损测试与实盘 (Live Trading) 的一键热切换。
+一个基于 AI 决策引擎驱动的 Polymarket 二元盘口自动化交易系统。V1 支持手动指定任意二元市场，支持模拟盘 (Paper Trading) 与实盘 (Live Trading) 热切换。
 
 ## 🌟 核心特性
 
 - **模块化架构**：核心逻辑从单体脚本拆分为 `core` (配置/状态), `api` (市场接口), `ai` (执行策略) 等独立模块。
 - **双模引擎 (Sim/Live)**：内置全功能模拟器，支持 1:1 还原实盘成交逻辑，通过 Web 控制台可实现毫秒级模式热切换。
-- **AI 决策流**：接入深度学习模型/策略分析，自动判断 BTC 趋势并执行最优买卖逻辑。
+- **AI 决策流**：接入大模型分析目标市场赔率与盘口深度，自动判断是否买入某个 outcome。
 - **现代化 Web 仪表盘**：采用组件化设计的监控中心，实时同步交易流水、资产分配图表及 AI 决策过程。
 - **环境自检**：一键式启动脚本，自动处理虚拟环境、依赖安装及服务编排。
 
@@ -62,7 +62,8 @@ chmod +x run.sh
 | `AI_ENABLED` | 是否启用 AI 自动信号 | `true` |
 | `PAPER_START_BALANCE` | 模拟盘初始资金 | `100` |
 | `BET_AMOUNT` | 单笔交易金额 (USDC) | `5` |
-| `BTC_UPDOWN_MARKET_ID`| 目标市场 Slug | `--` |
+| `TARGET_MARKET_SLUG`| 目标市场 Slug | `--` |
+| `TARGET_MARKET_URL`| 目标市场 URL | `--` |
 
 ## 📦 依赖项
 

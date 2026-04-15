@@ -4,7 +4,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 from .utils import load_json_file, save_json_file
-from .config import PAPER_STATE_FILE, STATUS_FILE
+from .config import PAPER_START_BALANCE, PAPER_STATE_FILE, STATUS_FILE
 
 logger = logging.getLogger("state_manager")
 
@@ -34,13 +34,14 @@ class StateManager:
             "mode": "paper_live",
             "generated_at": now,
             "session_started_at": now,
-            "cash_balance": 100.0, # TODO: Use config
+            "cash_balance": PAPER_START_BALANCE,
             "positions": [],
             "orders": [],
             "trades": [],
             "closed_markets": [],
             "ai_history": [],
             "stats": {"total_trades": 0, "winning_trades": 0, "losing_trades": 0, "total_profit": 0.0},
+            "market": {},
             "summary": {},
             "report": {},
             "last_signal": {}

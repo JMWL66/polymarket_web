@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polymarket BTC 交易控制台</title>
+    <title>Polymarket 通用盘口交易控制台</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@500;700;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
@@ -21,10 +21,10 @@
     <header class="topbar">
         <div class="topbar-left">
             <div class="brand-lockup">
-                <span class="brand-kicker">Daily Candle Bias / Same-Day BTC 15M</span>
+                <span class="brand-kicker">Manual Market Focus / Binary Market V1</span>
                 <div class="brand-line">
                     <span class="status-dot" id="status-dot"></span>
-                    <span class="topbar-title">Polymarket BTC 交易控制台</span>
+                    <span class="topbar-title">Polymarket 通用盘口交易控制台</span>
                     <span class="status-label" id="status-label">连接中...</span>
                 </div>
             </div>
@@ -69,7 +69,7 @@
                     <div class="metric-sub" id="real-balance-status">查询中</div>
                 </div>
                 <div class="metric-card price-card">
-                    <div class="metric-label">BTC 价格</div>
+                    <div class="metric-label">参考 BTC 价格</div>
                     <div class="metric-value mono" id="btc-price">--</div>
                     <div class="metric-sub" id="btc-change">--</div>
                 </div>
@@ -164,7 +164,7 @@
                 <div class="panel-header">
                     <span class="panel-title">聚焦盘口深度</span>
                 </div>
-                <div class="panel-caption">当前聚焦盘口的真实买一卖一深度；中间价贴近 Polymarket 页面展示价，实际买入看 ask、卖出看 bid。</div>
+                <div class="panel-caption">当前目标盘口的真实买卖深度；V1 版本先支持手动指定的二元盘口。</div>
                 <div class="orderbook-grid" id="orderbook-grid">
                     <div class="empty-row">Loading order book...</div>
                 </div>
@@ -199,22 +199,22 @@
                 <div class="panel-header">
                     <span class="panel-title">脚本参数</span>
                 </div>
-                <div class="panel-caption">页面显示的参数全部对应你这套脚本，不再使用旧的 5 分钟回放语义。</div>
+                <div class="panel-caption">当前页面展示的是运行中的目标市场、策略模板和执行阈值。</div>
                 <div class="config-grid" id="config-grid">
                     <div class="cfg-row"><span>交易模式</span><span class="mono" id="cfg-mode">--</span></div>
-                    <div class="cfg-row"><span>日线开盘</span><span class="mono" id="cfg-daily-open">--</span></div>
-                    <div class="cfg-row"><span>当前现价</span><span class="mono" id="cfg-current">--</span></div>
+                    <div class="cfg-row"><span>目标市场</span><span class="mono" id="cfg-daily-open">--</span></div>
+                    <div class="cfg-row"><span>市场到期</span><span class="mono" id="cfg-current">--</span></div>
                     <div class="cfg-row"><span>下注金额</span><span class="mono" id="cfg-bet">--</span></div>
                     <div class="cfg-row"><span>可用现金</span><span class="mono" id="cfg-max">--</span></div>
-                    <div class="cfg-row"><span>入场区间</span><span class="mono" id="cfg-diff">--</span></div>
+                    <div class="cfg-row"><span>策略模板</span><span class="mono" id="cfg-diff">--</span></div>
                     <div class="cfg-row"><span>最大点差</span><span class="mono" id="cfg-spread">--</span></div>
-                    <div class="cfg-row"><span>顶档卖盘</span><span class="mono" id="cfg-depth">--</span></div>
-                    <div class="cfg-row"><span>止盈条件</span><span class="mono" id="cfg-tp">--</span></div>
+                    <div class="cfg-row"><span>目标盘口</span><span class="mono" id="cfg-depth">--</span></div>
+                    <div class="cfg-row"><span>AI 最低信心</span><span class="mono" id="cfg-tp">--</span></div>
                     <div class="cfg-row"><span>当前开仓</span><span class="mono" id="cfg-open-positions">--</span></div>
                     <div class="cfg-row"><span>占用资金</span><span class="mono" id="cfg-reserved">--</span></div>
-                    <div class="cfg-row"><span>离场规则</span><span class="mono" id="cfg-sl">--</span></div>
+                    <div class="cfg-row"><span>执行规则</span><span class="mono" id="cfg-sl">--</span></div>
                     <div class="cfg-row"><span>模拟盈亏</span><span class="mono" id="cfg-paper-profit">--</span></div>
-                    <div class="cfg-row"><span>模拟账户</span><span class="mono" id="cfg-wallet">--</span></div>
+                    <div class="cfg-row"><span>当前账户</span><span class="mono" id="cfg-wallet">--</span></div>
                 </div>
             </div>
 
@@ -229,42 +229,108 @@
                 <button class="close-modal" id="close-settings">×</button>
             </div>
             <div class="modal-body">
+
+                <!-- ① 运行模式 -->
                 <div class="setting-group">
-                    <label>运行模式控制</label>
+                    <label class="setting-label">运行模式</label>
                     <div class="mode-selector">
                         <div class="mode-item active" data-mode="paper_live">
-                            <span class="mode-title">模拟账户 (Paper)</span>
-                            <span class="mode-desc">使用虚拟资金测试策略</span>
+                            <span class="mode-title">模拟 (Paper)</span>
+                            <span class="mode-desc">虚拟资金，无需私钥</span>
                         </div>
                         <div class="mode-item" data-mode="live">
-                            <span class="mode-title">真实账户 (Live)</span>
-                            <span class="mode-desc">调用官方 SDK 执行真钱下单</span>
+                            <span class="mode-title">实盘 (Live)</span>
+                            <span class="mode-desc">真钱下单，需全部凭证</span>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="setting-group">
-                    <label>API 凭证配置 (加密存储)</label>
-                    <div class="input-stack">
-                        <input type="text" id="cfg-input-api-key" placeholder="Polymarket API Key">
-                        <input type="password" id="cfg-input-api-secret" placeholder="Polymarket API Secret">
-                        <input type="password" id="cfg-input-api-pass" placeholder="API Passphrase">
                     </div>
                 </div>
 
+                <!-- ② Polymarket 交易凭证 -->
                 <div class="setting-group">
-                    <label>基础参数</label>
-                    <div class="input-grid">
-                        <div class="input-field">
-                            <span>单笔下单 ($)</span>
-                            <input type="number" id="cfg-input-bet" step="1">
+                    <label class="setting-label">
+                        Polymarket 交易凭证
+                        <a class="setting-link" href="https://polymarket.com/settings" target="_blank">开发者设置 →</a>
+                    </label>
+                    <div class="setting-hint">在 Polymarket → 设置 → API Keys 页面生成；模拟模式也需要前三项（用于查询持仓）。</div>
+                    <div class="input-stack">
+                        <div class="input-labeled">
+                            <span class="input-tag required">必填</span>
+                            <input type="text" id="cfg-input-api-key" placeholder="API Key（形如 019d8b3c-...）" autocomplete="off">
                         </div>
-                        <div class="input-field">
-                            <span>止盈点数</span>
-                            <input type="number" id="cfg-input-tp" step="0.01">
+                        <div class="input-labeled">
+                            <span class="input-tag required">必填</span>
+                            <input type="password" id="cfg-input-api-secret" placeholder="API Secret（Base64 字符串）" autocomplete="off">
+                        </div>
+                        <div class="input-labeled">
+                            <span class="input-tag required">必填</span>
+                            <input type="password" id="cfg-input-api-pass" placeholder="API Passphrase（64位十六进制）" autocomplete="off">
+                        </div>
+                        <div class="input-labeled">
+                            <span class="input-tag live-only">实盘</span>
+                            <input type="password" id="cfg-input-private-key" placeholder="EOA 私钥（0x 开头，64位十六进制）" autocomplete="off">
+                        </div>
+                        <div class="input-labeled">
+                            <span class="input-tag live-only">实盘</span>
+                            <input type="text" id="cfg-input-funder" placeholder="Funder 地址（开发者页面的钱包地址，非充值地址）" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="setting-hint hint-warn">⚠ 私钥仅存于本机 .env 文件，不会上传任何服务器。</div>
+                </div>
+
+                <!-- ③ AI 决策引擎 -->
+                <div class="setting-group">
+                    <label class="setting-label">目标市场</label>
+                    <div class="setting-hint">填 Polymarket 市场 URL 或具体 market slug。V1 暂时只支持二元盘口。</div>
+                    <div class="input-stack">
+                        <div class="input-labeled">
+                            <span class="input-tag required">必填</span>
+                            <input type="text" id="cfg-input-market" placeholder="https://polymarket.com/event/... 或 market slug" autocomplete="off">
                         </div>
                     </div>
                 </div>
+
+                <!-- ③ AI 决策引擎 -->
+                <div class="setting-group">
+                    <label class="setting-label">
+                        AI 决策引擎
+                        <a class="setting-link" href="https://platform.minimaxi.com" target="_blank">MiniMax 控制台 →</a>
+                    </label>
+                    <div class="setting-hint">兼容 OpenAI Chat API 格式；默认接入 MiniMax M2.7，也可改为 OpenAI / DeepSeek 等。</div>
+                    <div class="input-stack">
+                        <div class="input-labeled">
+                            <span class="input-tag required">必填</span>
+                            <input type="password" id="cfg-input-ai-key" placeholder="AI API Key" autocomplete="off">
+                        </div>
+                        <div class="input-labeled">
+                            <span class="input-tag optional">可选</span>
+                            <input type="text" id="cfg-input-ai-url" placeholder="Base URL（默认 https://api.minimax.chat/v1）" autocomplete="off">
+                        </div>
+                        <div class="input-labeled">
+                            <span class="input-tag optional">可选</span>
+                            <input type="text" id="cfg-input-ai-model" placeholder="模型名（默认 MiniMax-M2.7-highspeed）" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ④ 基础参数 -->
+                <div class="setting-group">
+                    <label class="setting-label">基础参数</label>
+                    <div class="input-grid-3">
+                        <div class="input-field">
+                            <span class="input-field-label">单笔下单 (USDC)</span>
+                            <input type="number" id="cfg-input-bet" step="1" min="1" placeholder="1">
+                        </div>
+                        <div class="input-field">
+                            <span class="input-field-label">止盈阈值 (USDC)</span>
+                            <input type="number" id="cfg-input-tp" step="0.01" min="0" placeholder="0.60">
+                        </div>
+                        <div class="input-field">
+                            <span class="input-field-label">AI 最低信心</span>
+                            <input type="number" id="cfg-input-confidence" step="0.05" min="0.5" max="0.95" placeholder="0.60">
+                        </div>
+                    </div>
+                </div>
+
             </div>
             <div class="modal-footer">
                 <button class="btn-cancel" id="cancel-settings">取消</button>
@@ -273,6 +339,6 @@
         </div>
     </div>
 
-    <script src="status.js?v=20260316p"></script>
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>

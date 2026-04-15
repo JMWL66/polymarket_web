@@ -1,6 +1,7 @@
 import logging
+import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from ..core.config import (
     Config, PAPER_START_BALANCE, LIVE_BET_AMOUNT, 
@@ -50,22 +51,53 @@ class PaperExecutor(BaseExecutor):
         if state["cash_balance"] < stake:
             return f"模拟资金不足: {state['cash_balance']:.2f} < {stake}"
         
-        now_utc = datetime.now() # 这里应该用循环里的 now_utc
+        now_utc = datetime.now(timezone.utc)
         shares = round(stake / entry_price, 6)
         
         position = {
             "id": f"paper-{int(time.time())}",
-            "market": snapshot.get("question"),
+            "market": snapshot.get("slug") or snapshot.get("question"),
+            "market_slug": snapshot.get("slug"),
+            "market_title": snapshot.get("question"),
+            "end_date": snapshot.get("end_date"),
             "outcome": outcome,
+            "outcome_name": outcome,
+            "outcome_index": quote.get("outcome_index"),
+            "token_id": quote.get("token_id"),
             "stake": stake,
+            "size": shares,
             "shares": shares,
             "entry_price": entry_price,
+            "current_bid": quote.get("best_bid"),
+            "current_ask": quote.get("best_ask"),
+            "created_at": now_utc.isoformat(),
             "opened_at": now_utc.isoformat(),
             "status": "OPEN"
         }
+
+        trade = {
+            "id": f"trade-{int(time.time())}",
+            "decision_id": signal.get("decision_id") if signal else None,
+            "created_at": now_utc.isoformat(),
+            "side": "BUY",
+            "outcome": outcome,
+            "market": snapshot.get("question"),
+            "market_slug": snapshot.get("slug"),
+            "amount": stake,
+            "size": shares,
+            "price": entry_price,
+            "status": "OPEN",
+            "reason": signal.get("reason") if signal else "",
+        }
         
         state["positions"].append(position)
+        state.setdefault("trades", []).insert(0, trade)
         state["cash_balance"] = round(state["cash_balance"] - stake, 4)
+        state["market"] = {
+            "slug": snapshot.get("slug"),
+            "question": snapshot.get("question"),
+            "end_date": snapshot.get("end_date"),
+        }
         self.state_manager.save()
         return f"模拟买入成功: {outcome} @ {entry_price}"
 
@@ -119,9 +151,29 @@ class LiveExecutor(BaseExecutor):
         stake = Config.get_float("LIVE_BET_AMOUNT", "1.0")
         
         # 调用真正下单
-        order_id = self.live_trader.buy(token_id, entry_price, stake)
+        order_id = self.live_trader.buy(
+            token_id=token_id,
+            price=entry_price,
+            size_usdc=stake,
+            tick_size=snapshot.get("tick_size", "0.01"),
+            neg_risk=snapshot.get("neg_risk", False),
+        )
         if order_id:
-            # 同样在本地记录一份以便追踪
+            state = self.state_manager.get_state()
+            state.setdefault("orders", []).insert(0, {
+                "id": order_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "side": "BUY",
+                "outcome": outcome,
+                "market": snapshot.get("question"),
+                "market_slug": snapshot.get("slug"),
+                "price": entry_price,
+                "amount": stake,
+                "token_id": token_id,
+                "status": "SUBMITTED",
+                "reason": signal.get("reason") if signal else "",
+            })
+            self.state_manager.save()
             return f"实盘下单成功: {order_id}"
         return "实盘下单失败"
 

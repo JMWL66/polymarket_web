@@ -1,4 +1,5 @@
 import os
+import math
 import time
 import logging
 from typing import Optional, Dict, Any
@@ -74,18 +75,19 @@ class LiveTrader:
             return f"dry-run-order-{int(time.time())}"
         
         try:
-            shares = round(size / price, 2)
+            shares = math.ceil(size / price * 100) / 100  # 向上取整，避免金额低于 $1 最小下单额
             order_args = OrderArgs(
                 token_id=token_id,
                 price=price,
                 size=shares,
-                side=side,
-                order_type=OrderType.GTC
+                side=side
             )
+            
+            from py_clob_client.clob_types import PartialCreateOrderOptions
             
             resp = self.client.create_and_post_order(
                 order_args, 
-                options={"tick_size": tick_size, "neg_risk": neg_risk}
+                options=PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
             )
             
             if resp and resp.get("success"):
@@ -100,7 +102,7 @@ class LiveTrader:
                     new_creds = self.client.create_or_derive_api_creds()
                     self.client.set_api_creds(new_creds)
                     # 重试一次
-                    resp = self.client.create_and_post_order(order_args, options={"tick_size": tick_size, "neg_risk": neg_risk})
+                    resp = self.client.create_and_post_order(order_args, options=PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk))
                     if resp and resp.get("success"):
                         return resp.get("orderID")
 

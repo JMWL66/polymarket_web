@@ -31,9 +31,15 @@ def extract_market_slug(market_input: str) -> str:
     """从市场输入解析出 slug"""
     if not market_input:
         return ""
-    if "polymarket.com/event/" in market_input:
-        return market_input.split("polymarket.com/event/")[-1].split("#")[0].split("?")[0]
-    return market_input
+    value = str(market_input).strip()
+    if not value:
+        return ""
+    for marker in ("polymarket.com/event/", "polymarket.com/market/"):
+        if marker in value:
+            value = value.split(marker, 1)[-1]
+            break
+    value = value.split("#", 1)[0].split("?", 1)[0].strip().strip("/")
+    return value
 
 def short_wallet(address: str) -> str:
     """展示缩写的钱包地址"""

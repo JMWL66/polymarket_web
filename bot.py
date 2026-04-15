@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Polymarket BTC 统一交易机器人 - 引导脚本
+Polymarket 通用盘口交易机器人 - 引导脚本
 模块代码已迁移至 src/ 目录以实现高可维护性。
 支持通过 Web 控制台实时切换 模拟/实盘 模式。
 """
