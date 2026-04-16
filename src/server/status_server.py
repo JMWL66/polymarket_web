@@ -79,6 +79,7 @@ def load_env():
         "PAPER_TAKE_PROFIT_USD",
         "PAPER_POLL_INTERVAL_SECONDS",
         "PAPER_MAX_OPEN_POSITIONS",
+        "LIVE_MAX_OPEN_POSITIONS",
         "PAPER_MAX_SPREAD",
         "PAPER_MIN_TOP_BOOK_SIZE",
         "PAPER_MIN_MINUTES_TO_EXPIRY",
@@ -105,6 +106,7 @@ def load_env():
         "AI_BASE_URL",
         "AI_API_KEY",
         "AI_MIN_CONFIDENCE",
+        "AI_TRADING_SKILL",
         "AI_PROVIDER",
         "AI_DECISION_INTERVAL_SECONDS",
         "MINIMAX_API_KEY",
@@ -681,7 +683,9 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                     "bet_amount", "paper_bet_amount", "take_profit_usd",
                     "TARGET_MARKET_SLUG", "TARGET_MARKET_URL",
                     "MARKET_SELECTION_MODE", "STRATEGY_PROFILE", "ALLOW_MULTI_OUTCOME",
-                    "AI_MIN_CONFIDENCE",
+                    "AI_MIN_CONFIDENCE", "AI_TRADING_SKILL",
+                    "LIVE_MAX_OPEN_POSITIONS", "PAPER_MAX_OPEN_POSITIONS",
+                    "AI_DECISION_INTERVAL_SECONDS",
                 ]
                 control = load_json_file(CONTROL_FILE, {})
                 for k in CONTROL_WRITABLE_KEYS:
@@ -848,7 +852,7 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
             signal = state.get("last_signal", {})
             control = load_trading_control()
             config = {
-                "ai_decision_interval_seconds": signal.get("decision_interval_seconds") or env.get("AI_DECISION_INTERVAL_SECONDS", "180"),
+                "ai_decision_interval_seconds": env.get("AI_DECISION_INTERVAL_SECONDS", signal.get("decision_interval_seconds") or "15"),
                 "bet_amount": env.get("BET_AMOUNT", "1"),
                 "max_bet_amount": env.get("MAX_BET_AMOUNT", "10"),
                 "paper_bet_amount": env.get("PAPER_BET_AMOUNT", env.get("BET_AMOUNT", "1")),
@@ -866,6 +870,7 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "forward_slot_count": env.get("PAPER_FORWARD_SLOT_COUNT", "8"),
                 "paper_start_balance": env.get("PAPER_START_BALANCE", "100"),
                 "paper_max_open_positions": env.get("PAPER_MAX_OPEN_POSITIONS", "1"),
+                "live_max_open_positions": env.get("LIVE_MAX_OPEN_POSITIONS", "1"),
                 "stop_loss_enabled": env.get("STOP_LOSS_ENABLED", "true"),
                 "stop_loss_percent": env.get("STOP_LOSS_PERCENT", "0.10"),
                 "market_id": (bot_status.get("market_slug") or state.get("market", {}).get("slug") or get_active_market_slug(env) or "")[:48],
@@ -897,7 +902,12 @@ class StatusHandler(http.server.SimpleHTTPRequestHandler):
                 "ai_model": signal.get("ai_model") or env.get("AI_MODEL", "gpt-4o-mini"),
                 "AI_MODEL": env.get("AI_MODEL", "gpt-4o-mini"),
                 "AI_BASE_URL": env.get("AI_BASE_URL", ""),
+                "AI_DECISION_INTERVAL_SECONDS": env.get("AI_DECISION_INTERVAL_SECONDS", "15"),
                 "AI_MIN_CONFIDENCE": env.get("AI_MIN_CONFIDENCE", "0.60"),
+                "AI_TRADING_SKILL": env.get("AI_TRADING_SKILL", ""),
+                "ai_trading_skill": env.get("AI_TRADING_SKILL", ""),
+                "LIVE_MAX_OPEN_POSITIONS": env.get("LIVE_MAX_OPEN_POSITIONS", "1"),
+                "PAPER_MAX_OPEN_POSITIONS": env.get("PAPER_MAX_OPEN_POSITIONS", "1"),
                 "POLYMARKET_WALLET_ADDRESS": env.get("POLYMARKET_WALLET_ADDRESS", ""),
                 "POLYMARKET_FUNDER_ADDRESS": env.get("POLYMARKET_FUNDER_ADDRESS", ""),
                 "ai_source": signal.get("ai_source"),

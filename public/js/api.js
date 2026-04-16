@@ -279,9 +279,12 @@ export async function saveSystemSettings() {
     saveSettingsBtn.textContent = '保存中...';
 
     const selectedMode = document.querySelector('.mode-selector .mode-item.active')?.dataset.mode || 'paper_live';
+    const marketMode = _getInputVal('cfg-input-market-mode') || 'manual';
     const betVal  = parseFloat(_getInputVal('cfg-input-bet'))        || 1;
     const tpVal   = parseFloat(_getInputVal('cfg-input-tp'))         || 0.60;
     const confVal = parseFloat(_getInputVal('cfg-input-confidence')) || 0.60;
+    const maxPosVal = parseInt(_getInputVal('cfg-input-max-positions'), 10) || 1;
+    const scanIntervalVal = parseInt(_getInputVal('cfg-input-scan-interval'), 10) || 15;
 
     // 基础字段总是覆盖
     const updatePayload = {
@@ -290,12 +293,17 @@ export async function saveSystemSettings() {
         paper_bet_amount:   betVal,
         take_profit_usd:    tpVal,
         AI_MIN_CONFIDENCE:  confVal,
-        MARKET_SELECTION_MODE: 'manual',
+        AI_DECISION_INTERVAL_SECONDS: scanIntervalVal,
+        LIVE_MAX_OPEN_POSITIONS: maxPosVal,
+        PAPER_MAX_OPEN_POSITIONS: maxPosVal,
+        MARKET_SELECTION_MODE: marketMode,
         STRATEGY_PROFILE: 'generic_binary',
+        TARGET_MARKET_URL: '',
+        TARGET_MARKET_SLUG: '',
     };
 
     const marketInput = _getInputVal('cfg-input-market');
-    if (marketInput) {
+    if (marketMode === 'manual' && marketInput) {
         const looksLikeUrl = /polymarket\.com\/|^https?:\/\//i.test(marketInput);
         updatePayload.TARGET_MARKET_URL = looksLikeUrl ? marketInput : '';
         updatePayload.TARGET_MARKET_SLUG = looksLikeUrl ? '' : marketInput;
@@ -317,9 +325,11 @@ export async function saveSystemSettings() {
     const aiKey   = _getInputVal('cfg-input-ai-key');
     const aiUrl   = _getInputVal('cfg-input-ai-url');
     const aiModel = _getInputVal('cfg-input-ai-model');
+    const aiSkill = _getInputVal('cfg-input-ai-skill');
     if (aiKey)   updatePayload.AI_API_KEY  = aiKey;
     if (aiUrl)   updatePayload.AI_BASE_URL = aiUrl;
     if (aiModel) updatePayload.AI_MODEL    = aiModel;
+    updatePayload.AI_TRADING_SKILL = aiSkill;
 
     try {
         const resp = await fetch('/api/update-config', {

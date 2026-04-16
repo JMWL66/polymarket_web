@@ -1,4 +1,17 @@
 {
-  "trading_enabled": true,
-  "updated_at": "2026-04-15T05:30:50.234274+00:00"
+  "trading_enabled": false,
+  "updated_at": "2026-04-16T04:20:38.749894+00:00",
+  "TRADING_MODE": "live",
+  "bet_amount": 1,
+  "paper_bet_amount": 1,
+  "take_profit_usd": 0.6,
+  "TARGET_MARKET_SLUG": "",
+  "TARGET_MARKET_URL": "",
+  "MARKET_SELECTION_MODE": "auto_btc_15m",
+  "STRATEGY_PROFILE": "generic_binary",
+  "AI_MIN_CONFIDENCE": 0.6,
+  "AI_TRADING_SKILL": "",
+  "LIVE_MAX_OPEN_POSITIONS": 1,
+  "PAPER_MAX_OPEN_POSITIONS": 1,
+  "AI_DECISION_INTERVAL_SECONDS": 30
 }

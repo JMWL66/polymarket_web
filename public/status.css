@@ -2158,6 +2158,18 @@ body::after {
     gap: 12px;
 }
 
+.input-grid-4 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 12px;
+}
+
+.input-grid-5 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+    gap: 12px;
+}
+
 .input-field {
     display: flex;
     flex-direction: column;
@@ -2217,7 +2229,7 @@ body::after {
     color: var(--text-muted);
 }
 
-.input-stack input, .input-grid input {
+.input-stack input, .input-grid input, .input-stack textarea, .input-grid textarea {
     width: 100%;
     background: #06090f;
     border: 1px solid var(--line);
@@ -2225,6 +2237,57 @@ body::after {
     color: var(--text);
     padding: 10px;
     margin-bottom: 8px;
+}
+
+.input-stack textarea,
+.input-grid textarea {
+    resize: vertical;
+    min-height: 110px;
+    line-height: 1.55;
+    font-family: inherit;
+}
+
+.template-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 8px;
+}
+
+.template-chip {
+    background: rgba(240, 185, 11, 0.08);
+    border: 1px solid rgba(240, 185, 11, 0.24);
+    color: var(--amber);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.template-chip:hover {
+    background: rgba(240, 185, 11, 0.14);
+    border-color: rgba(240, 185, 11, 0.4);
+    transform: translateY(-1px);
+}
+
+@media (max-width: 980px) {
+    .input-grid-4 {
+        grid-template-columns: 1fr 1fr;
+    }
+    .input-grid-5 {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .input-grid-4 {
+        grid-template-columns: 1fr;
+    }
+    .input-grid-5 {
+        grid-template-columns: 1fr;
+    }
 }
 
 .input-grid {

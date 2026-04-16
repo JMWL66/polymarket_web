@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import OrderArgs, OrderType, ApiCreds
 from py_clob_client.order_builder.constants import BUY, SELL
+from py_clob_client.exceptions import PolyApiException
 
 # 设置日志
 logger = logging.getLogger("live_trader")
@@ -62,6 +63,40 @@ class LiveTrader:
         else:
             logger.info("已加载现有 API 凭证")
 
+    def _is_auth_error(self, error: Exception) -> bool:
+        if isinstance(error, PolyApiException) and error.status_code == 401:
+            return True
+        text = str(error)
+        return "401" in text or "Unauthorized" in text or "Invalid api key" in text
+
+    def _refresh_api_creds(self):
+        logger.warning("⚠️ API 凭证失效，正在重新派生...")
+        new_creds = self.client.create_or_derive_api_creds()
+        self.client.set_api_creds(new_creds)
+        logger.info("✅ API 凭证已刷新")
+        return new_creds
+
+    def _call_with_auth_refresh(self, func, *args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            if not self._is_auth_error(exc):
+                raise
+            self._refresh_api_creds()
+            return func(*args, **kwargs)
+
+    def _normalize_balance(self, raw_value: Any) -> float:
+        try:
+            text = str(raw_value).strip()
+            if not text:
+                return 0.0
+            value = float(text)
+            if "." not in text and abs(value) >= 1000:
+                return value / 1_000_000
+            return value
+        except Exception:
+            return 0.0
+
     def _execute_order(self, token_id: str, price: float, size: float, side: Any, 
                         tick_size: str = "0.01", neg_risk: bool = False) -> Optional[str]:
         """内部执行下单逻辑"""
@@ -73,7 +108,7 @@ class LiveTrader:
         if self.dry_run:
             logger.info(f"{log_prefix}已跳过实际下单提交")
             return f"dry-run-order-{int(time.time())}"
-        
+
         try:
             shares = math.ceil(size / price * 100) / 100  # 向上取整，避免金额低于 $1 最小下单额
             order_args = OrderArgs(
@@ -84,28 +119,18 @@ class LiveTrader:
             )
             
             from py_clob_client.clob_types import PartialCreateOrderOptions
-            
-            resp = self.client.create_and_post_order(
-                order_args, 
+
+            resp = self._call_with_auth_refresh(
+                self.client.create_and_post_order,
+                order_args,
                 options=PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk)
             )
-            
+
             if resp and resp.get("success"):
                 order_id = resp.get("orderID")
                 logger.info(f"✅ 下单成功! OrderID: {order_id}")
                 return order_id
             else:
-                # 处理 401 错误，尝试重新派生凭证
-                error_msg = str(resp)
-                if "401" in error_msg or "Unauthorized" in error_msg:
-                    logger.warning("⚠️ API 凭证过期或无效，正在尝试重新派生并重试...")
-                    new_creds = self.client.create_or_derive_api_creds()
-                    self.client.set_api_creds(new_creds)
-                    # 重试一次
-                    resp = self.client.create_and_post_order(order_args, options=PartialCreateOrderOptions(tick_size=tick_size, neg_risk=neg_risk))
-                    if resp and resp.get("success"):
-                        return resp.get("orderID")
-
                 logger.error(f"❌ 下单失败: {resp}")
                 return None
                 
@@ -133,24 +158,59 @@ class LiveTrader:
                 asset_type=AssetType.COLLATERAL,
                 signature_type=self.signature_type
             )
-            
-            # 尝试获取余额
-            try:
-                resp = self.client.get_balance_allowance(params)
-            except Exception as e:
-                if "401" in str(e) or "Unauthorized" in str(e):
-                    logger.warning("⚠️ 余额查询时 API 密钥无效，正在重新派生...")
-                    new_creds = self.client.create_or_derive_api_creds()
-                    self.client.set_api_creds(new_creds)
-                    resp = self.client.get_balance_allowance(params)
-                else:
-                    raise e
-            
-            balance = float(resp.get("balance", 0.0))
+
+            resp = self._call_with_auth_refresh(self.client.get_balance_allowance, params)
+            balance = self._normalize_balance(resp.get("balance", 0.0))
             return {"USDC": balance}
         except Exception as e:
             logger.error(f"查询余额失败: {e}")
             return {"USDC": 0.0}
+
+    def get_token_balance(self, token_id: str) -> float:
+        """获取条件代币可卖余额（按实际 share 数量归一化）。"""
+        if not token_id:
+            return 0.0
+        try:
+            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+
+            params = BalanceAllowanceParams(
+                asset_type=AssetType.CONDITIONAL,
+                token_id=token_id,
+                signature_type=self.signature_type,
+            )
+            resp = self._call_with_auth_refresh(self.client.get_balance_allowance, params)
+            return self._normalize_balance(resp.get("balance", 0.0))
+        except Exception as e:
+            logger.error(f"查询条件代币余额失败 {token_id}: {e}")
+            return 0.0
+
+    def get_open_orders(self):
+        """获取当前账户所有活跃挂单。"""
+        try:
+            return self._call_with_auth_refresh(self.client.get_orders)
+        except Exception as e:
+            logger.error(f"查询活跃订单失败: {e}")
+            return []
+
+    def get_trades(self, params=None):
+        """获取账户成交历史。"""
+        try:
+            return self._call_with_auth_refresh(self.client.get_trades, params)
+        except Exception as e:
+            logger.error(f"查询成交历史失败: {e}")
+            return []
+
+    def cancel_order(self, order_id: str):
+        """撤销单个订单。"""
+        if self.dry_run:
+            logger.info("[DRY_RUN] 跳过单笔撤单: %s", order_id)
+            return {"canceled": [order_id]}
+
+        try:
+            return self._call_with_auth_refresh(self.client.cancel, order_id)
+        except Exception as e:
+            logger.error(f"撤销订单失败 {order_id}: {e}")
+            return None
 
     def cancel_all_orders(self):
         """撤销所有挂单"""
@@ -159,7 +219,7 @@ class LiveTrader:
             return
         
         try:
-            self.client.cancel_all()
+            self._call_with_auth_refresh(self.client.cancel_all)
             logger.info("已请求撤销所有订单")
         except Exception as e:
             logger.error(f"撤单失败: {e}")

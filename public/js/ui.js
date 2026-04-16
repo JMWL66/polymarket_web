@@ -187,25 +187,33 @@ export function renderConfig() {
         : firstNumber(cfg.reserved_balance, paperSummary.reserved_balance);
     const openPositions = dashboardState.positionCounts[getActiveAccountMode()];
     const viewLabel = isReal ? '真实账户视图' : '模拟账户视图';
-    const marketQuestion = firstValue(cfg.market_question, cfg.target_market_slug, cfg.target_market_url, '--');
+    const isAutoBtcPreset = (cfg.market_selection_mode || 'manual') === 'auto_btc_15m';
+    const marketQuestion = firstValue(
+        cfg.market_question,
+        isAutoBtcPreset ? 'BTC 15m 滚动盘口' : null,
+        cfg.target_market_slug,
+        cfg.target_market_url,
+        '--'
+    );
     const marketOutcomes = Array.isArray(cfg.market_outcomes) ? cfg.market_outcomes : [];
     const minConfidence = firstNumber(cfg.ai_min_confidence, cfg.AI_MIN_CONFIDENCE);
     const outcomeSummary = marketOutcomes.length
         ? marketOutcomes.map(item => `[${item.index}] ${item.label} @ ${item.price ?? '--'}`).join(' | ')
         : '--';
+    const marketModeLabel = isAutoBtcPreset ? 'BTC 15m 预置模式' : '固定目标市场';
 
     setText('cfg-mode', cfg.strategy_name ? `${mode} / ${viewLabel}` : `${mode} / ${viewLabel}`);
     setText('cfg-daily-open', marketQuestion);
     setText('cfg-current', cfg.market_end_date ? shortTime(cfg.market_end_date) : '--');
     setText('cfg-bet', '$' + (cfg.paper_bet_amount || cfg.bet_amount || '--'));
     setText('cfg-max', cashBalance != null ? formatUSD(cashBalance) : '$' + (cfg.max_bet_amount || '--'));
-    setText('cfg-diff', cfg.strategy_profile || cfg.market_selection_mode || '--');
+    setText('cfg-diff', `${cfg.strategy_profile || '--'} / ${marketModeLabel}`);
     if (cfg.max_spread !== undefined) {
         setText('cfg-spread', '<= ' + Number(cfg.max_spread).toFixed(2));
     }
     setText('cfg-depth', outcomeSummary);
     setText('cfg-tp', minConfidence != null ? `>= ${minConfidence.toFixed(2)}` : '--');
-    setText('cfg-sl', `手动目标市场 · 二元盘口 V1 · ${cfg.trading_enabled ? '交易开启' : '交易关闭'}`);
+    setText('cfg-sl', `${marketModeLabel} · 二元盘口 V1 · ${cfg.trading_enabled ? '交易开启' : '交易关闭'}`);
 
     setText('cfg-open-positions', `${openPositions || 0} 仓`);
     setText('cfg-reserved', reservedBalance != null ? formatUSD(reservedBalance) : (isReal ? '只读' : '--'));
@@ -656,6 +664,8 @@ export function initSettings() {
     const closeSettingsBtn = document.getElementById('close-settings');
     const cancelSettingsBtn = document.getElementById('cancel-settings');
     const saveSettingsBtn = document.getElementById('save-settings');
+    const marketModeSelect = document.getElementById('cfg-input-market-mode');
+    const aiSkillButtons = document.querySelectorAll('[data-ai-skill-template]');
 
     if (!openSettingsBtn) return;
 
@@ -675,6 +685,14 @@ export function initSettings() {
             document.querySelectorAll('.mode-selector .mode-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
         });
+    });
+
+    if (marketModeSelect) {
+        marketModeSelect.addEventListener('change', syncMarketModeUI);
+    }
+
+    aiSkillButtons.forEach(btn => {
+        btn.addEventListener('click', () => applyAiSkillTemplate(btn.dataset.aiSkillTemplate || ''));
     });
 
     if (saveSettingsBtn) {
@@ -700,17 +718,69 @@ function syncSettingsToUI() {
     setVal('cfg-input-api-pass',   '');
     setVal('cfg-input-private-key','');
     setVal('cfg-input-funder',     cfg.POLYMARKET_FUNDER_ADDRESS || cfg.POLYMARKET_WALLET_ADDRESS || '');
+    setVal('cfg-input-market-mode', cfg.market_selection_mode || 'manual');
     setVal('cfg-input-market',     cfg.target_market_url || cfg.target_market_slug || '');
+    syncMarketModeUI();
 
     // AI 引擎
     setVal('cfg-input-ai-key',   '');     // 不回显
     setVal('cfg-input-ai-url',   cfg.AI_BASE_URL || '');
     setVal('cfg-input-ai-model', cfg.AI_MODEL || '');
+    setVal('cfg-input-ai-skill', cfg.AI_TRADING_SKILL || cfg.ai_trading_skill || '');
 
     // 基础参数
     setVal('cfg-input-bet',        String(cfg.paper_bet_amount || cfg.bet_amount || 1));
     setVal('cfg-input-tp',         String(cfg.take_profit_usd || 0.60));
     setVal('cfg-input-confidence', String(cfg.AI_MIN_CONFIDENCE || cfg.ai_min_confidence || 0.60));
+    setVal('cfg-input-max-positions', String(cfg.LIVE_MAX_OPEN_POSITIONS || cfg.PAPER_MAX_OPEN_POSITIONS || cfg.live_max_open_positions || cfg.paper_max_open_positions || 1));
+    setVal('cfg-input-scan-interval', String(cfg.AI_DECISION_INTERVAL_SECONDS || cfg.ai_decision_interval_seconds || 15));
+}
+
+function syncMarketModeUI() {
+    const modeEl = document.getElementById('cfg-input-market-mode');
+    const marketInput = document.getElementById('cfg-input-market');
+    const marketHint = document.getElementById('cfg-market-mode-hint');
+    const marketTag = document.getElementById('cfg-market-input-tag');
+    if (!modeEl || !marketInput || !marketHint || !marketTag) return;
+
+    const mode = modeEl.value || 'manual';
+    const isAutoBtc = mode === 'auto_btc_15m';
+    marketInput.disabled = isAutoBtc;
+    marketInput.placeholder = isAutoBtc
+        ? 'BTC 15m 预置模式无需填写 URL'
+        : 'https://polymarket.com/event/... 或 market slug';
+    marketTag.textContent = isAutoBtc ? '预置' : '手填';
+    marketHint.textContent = isAutoBtc
+        ? '系统会自动跟踪当前可交易的 BTC 15m 滚动盘口，无需维护固定链接。'
+        : '固定市场适合长期盘口；支持填写 Polymarket URL 或具体 market slug。';
+}
+
+function applyAiSkillTemplate(key) {
+    const textarea = document.getElementById('cfg-input-ai-skill');
+    if (!textarea) return;
+    const templates = {
+        conservative: [
+            'BTC 15m 只做顺势单。',
+            '如果价格已经位于 15m 区间顶部 80% 以上，不追多；位于底部 20% 以下，不追空。',
+            '只有在 1m/3m/5m 动量一致、量比不弱、且盘口成本可接受时才考虑入场。',
+            '临近到期 5 分钟内尽量不新开仓。',
+        ].join('\n'),
+        aggressive: [
+            'BTC 15m 允许更积极的短线入场，但仍要求有明确方向。',
+            '1m/3m/5m 只要多数同向且 15m 不强烈反向，就可以考虑出手。',
+            '允许在 50/50 附近寻找短线偏差，但不要在极端高位/低位盲目追价。',
+            '若动量快速反转，优先考虑及时离场。',
+        ].join('\n'),
+        high_confidence: [
+            '只做高确定性交易。',
+            '要求 1m/3m/5m 动量全部同向，15m 不逆向，量比至少中性以上。',
+            '如果价格接近 50/50 且没有明显定价偏差，一律跳过。',
+            '宁可错过，也不要做模糊信号或流动性差的盘口。',
+        ].join('\n'),
+    };
+    if (templates[key]) {
+        textarea.value = templates[key];
+    }
 }
 
 export function togglePositionExpand(id) {

@@ -280,13 +280,21 @@
                 <!-- ③ AI 决策引擎 -->
                 <div class="setting-group">
                     <label class="setting-label">目标市场</label>
-                    <div class="setting-hint">填 Polymarket 市场 URL 或具体 market slug。V1 暂时只支持二元盘口。</div>
+                    <div class="setting-hint">BTC 15m 可用预置滚动盘口；长期市场继续手填 Polymarket URL 或 market slug。V1 暂时只支持二元盘口。</div>
                     <div class="input-stack">
                         <div class="input-labeled">
-                            <span class="input-tag required">必填</span>
+                            <span class="input-tag required">模式</span>
+                            <select id="cfg-input-market-mode">
+                                <option value="auto_btc_15m">BTC 15m 预置模式</option>
+                                <option value="manual">固定市场 URL / slug</option>
+                            </select>
+                        </div>
+                        <div class="input-labeled">
+                            <span class="input-tag" id="cfg-market-input-tag">手填</span>
                             <input type="text" id="cfg-input-market" placeholder="https://polymarket.com/event/... 或 market slug" autocomplete="off">
                         </div>
                     </div>
+                    <div class="setting-hint" id="cfg-market-mode-hint">选择预置模式后，系统会自动跟踪当前可交易的 BTC 15m 滚动盘口。</div>
                 </div>
 
                 <!-- ③ AI 决策引擎 -->
@@ -312,10 +320,27 @@
                     </div>
                 </div>
 
+                <div class="setting-group">
+                    <label class="setting-label">AI 交易 Skill</label>
+                    <div class="setting-hint">用自然语言描述你的交易偏好。例：更偏向顺势、不追高、临近到期少开仓、只在 1m/3m/5m 动量一致时考虑入场。</div>
+                    <div class="template-row">
+                        <button type="button" class="template-chip" data-ai-skill-template="conservative">保守顺势</button>
+                        <button type="button" class="template-chip" data-ai-skill-template="aggressive">激进短线</button>
+                        <button type="button" class="template-chip" data-ai-skill-template="high_confidence">只做高确定性</button>
+                    </div>
+                    <div class="input-stack">
+                        <div class="input-labeled">
+                            <span class="input-tag optional">可选</span>
+                            <textarea id="cfg-input-ai-skill" rows="5" placeholder="例如：BTC 15m 只做顺势单；如果价格已经位于 15m 区间顶部/底部，避免追价；更重视 1m/3m/5m 动量一致，其次才看 24h 涨跌。"></textarea>
+                        </div>
+                    </div>
+                    <div class="setting-hint">这会作为附加 prompt 注入 AI 决策，但不会绕过重复开仓、到期退出、持仓同步等底层规则。</div>
+                </div>
+
                 <!-- ④ 基础参数 -->
                 <div class="setting-group">
                     <label class="setting-label">基础参数</label>
-                    <div class="input-grid-3">
+                    <div class="input-grid-5">
                         <div class="input-field">
                             <span class="input-field-label">单笔下单 (USDC)</span>
                             <input type="number" id="cfg-input-bet" step="1" min="1" placeholder="1">
@@ -327,6 +352,14 @@
                         <div class="input-field">
                             <span class="input-field-label">AI 最低信心</span>
                             <input type="number" id="cfg-input-confidence" step="0.05" min="0.5" max="0.95" placeholder="0.60">
+                        </div>
+                        <div class="input-field">
+                            <span class="input-field-label">最大持仓</span>
+                            <input type="number" id="cfg-input-max-positions" step="1" min="1" max="20" placeholder="1">
+                        </div>
+                        <div class="input-field">
+                            <span class="input-field-label">扫描频率 (秒)</span>
+                            <input type="number" id="cfg-input-scan-interval" step="1" min="5" max="3600" placeholder="15">
                         </div>
                     </div>
                 </div>

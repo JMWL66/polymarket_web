@@ -8,9 +8,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent.parent.absolute()
 _current_dir = BASE_DIR
 DATA_DIR = os.path.join(_current_dir, "data")
+DOCS_DIR = os.path.join(_current_dir, "docs")
 STATUS_FILE = os.path.join(DATA_DIR, "bot_status.json")
 PAPER_STATE_FILE = os.path.join(DATA_DIR, "paper_trade_state.json")
-REPORT_FILE = os.path.join(DATA_DIR, "paper_trade_report.md")
+REPORT_FILE = os.path.join(DOCS_DIR, "paper_trade_report.md")  # 报告归档至 docs/
 CONTROL_FILE = os.path.join(DATA_DIR, "trading_control.json")
 ENV_FILE = os.path.join(_current_dir, ".env")
 
